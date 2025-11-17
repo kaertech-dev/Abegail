@@ -1,0 +1,6 @@
+# Install Heroku CLI, then:
+heroku create your-chatbot-name
+git init
+git add .
+git commit -m "Initial commit"
+git push heroku main
