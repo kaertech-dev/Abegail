@@ -16,7 +16,7 @@ nltk.download('wordnet', quiet=True)
 
 # Expanded knowledge base - this is what makes your chatbot smart!
 knowledge_base = """
-Hello! I'm Abegail, your friendly chatbot. I can help you with various topics.
+Hello! I'm Abegail, your friendly chatbot Ai. I can help you with various topics.
 I love chatting about technology, programming, weather, sports, and general knowledge.
 Python is one of my favorite programming languages.
 Flask is a great web framework for building web applications.
