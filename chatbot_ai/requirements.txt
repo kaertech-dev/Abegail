@@ -1,4 +1,0 @@
-flask
-nltk
-scikit-learn
-httpx
