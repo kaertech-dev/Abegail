@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Abegail AI Assistant 🤖</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='chatroom.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="chat-container" id="chatContainer">
+        <div class="chat-header">
+            <div class="header-left">
+                <h1>💬 Abegail</h1>
+                <p>Company Data Analysis + General Knowledge Assistant</p>
+            </div>
+            <div class="header-actions">
+                <button class="icon-button" id="searchToggle" title="Search messages (Ctrl+F)">
+                    <i class="fas fa-search"></i>
+                </button>
+                <button class="icon-button" id="settingsToggle" title="Settings">
+                    <i class="fas fa-cog"></i>
+                </button>
+                <button class="icon-button" id="themeToggle" title="Toggle dark mode">
+                    <i class="fas fa-moon"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="search-bar" id="searchBar" style="display: none;">
+            <input type="text" id="searchInput" placeholder="Search messages... (Esc to close)" />
+            <button class="icon-button" id="searchClose">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="search-results" id="searchResults"></div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div class="settings-panel" id="settingsPanel" style="display: none;">
+            <div class="settings-header">
+                <h3>Settings</h3>
+                <button class="icon-button" id="settingsClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="settings-content">
+                <div class="setting-item">
+                    <label>Theme</label>
+                    <select id="themeSelect">
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                        <option value="auto">Auto (System)</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <label>Font Size</label>
+                    <input type="range" id="fontSizeSlider" min="12" max="18" value="14" />
+                    <span id="fontSizeValue">14px</span>
+                </div>
+                <div class="setting-item">
+                    <label>Auto-scroll</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="autoScrollToggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label>Sound Effects</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="soundToggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <button class="action-button" onclick="exportChat()">
+                        <i class="fas fa-download"></i> Export Chat History
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-messages" id="chatMessages">
+            <div class="message-bubble bot"> 
+                <div class="message-content">
+                    <div class="avatar bot-avatar">
+                        <img src="{{ url_for('static', filename='images/abegail-removebg-preview.png') }}" alt="Abegail Avatar">
+                    </div>
+
+                    <div>
+                        <div class="bubble">Hello! I'm Abegail, your AI assistant! 😊<br><br>I can help you with:<br>• Company production data & statistics<br>• General knowledge questions<br>• And much more!<br><br>Try asking me anything!</div>
+                        <div class="timestamp" id="welcomeTime"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="status" id="status">
+            <span id="statusText">Ready</span>
+            <span class="status-indicator" id="statusIndicator"></span>
+        </div>
+
+        <div class="chat-input-container">
+            <button class="icon-button" id="attachButton" title="Attach file">
+                <i class="fas fa-paperclip"></i>
+            </button>
+            <input 
+                type="text" 
+                class="chat-input" 
+                id="messageInput" 
+                placeholder="Ask about company data or anything else... (Press Enter to send, Shift+Enter for new line)"
+                onkeypress="handleKeyPress(event)"
+            >
+            <button class="send-button" id="sendButton" onclick="sendMessage()" title="Send (Enter)">
+                <i class="fas fa-paper-plane"></i>
+            </button>
+            <button class="icon-button clear-button" onclick="clearChat()" title="Clear chat">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Message Context Menu -->
+    <div class="context-menu" id="contextMenu" style="display: none;">
+        <button class="context-item" onclick="copyMessage()">
+            <i class="fas fa-copy"></i> Copy
+        </button>
+        <button class="context-item" onclick="reactToMessage()">
+            <i class="fas fa-thumbs-up"></i> React
+        </button>
+        <button class="context-item" onclick="deleteMessage()">
+            <i class="fas fa-trash"></i> Delete
+        </button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="{{ url_for('static', filename='chatroom.js') }}"></script>
+</body>
+</html>

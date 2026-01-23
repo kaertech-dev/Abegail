@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Company AI Chatroom</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .chatroom-container {
+            width: 90%;
+            max-width: 800px;
+            height: 90vh;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .chat-header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .chat-header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message-question {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 10px;
+        }
+
+        .message-question .bubble {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 18px;
+            border-radius: 18px 18px 5px 18px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+
+        .message-answer {
+            display: flex;
+            justify-content: flex-start;
+        }
+
+        .message-answer .bubble {
+            background: white;
+            color: #333;
+            padding: 12px 18px;
+            border-radius: 18px 18px 18px 5px;
+            max-width: 70%;
+            word-wrap: break-word;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .timestamp {
+            font-size: 11px;
+            color: #999;
+            margin-top: 5px;
+            text-align: right;
+        }
+
+        .chat-input-area {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 18px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .chat-input:focus {
+            border-color: #667eea;
+        }
+
+        .send-button {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .send-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .send-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: #666;
+            font-style: italic;
+        }
+
+        .loading-dots span {
+            animation: blink 1.4s infinite;
+            font-size: 20px;
+        }
+
+        .loading-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .loading-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes blink {
+            0%, 80%, 100% { opacity: 0; }
+            40% { opacity: 1; }
+        }
+
+        .clear-button {
+            padding: 8px 20px;
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .clear-button:hover {
+            background: #ff5252;
+        }
+
+        .test-api-button {
+            padding: 8px 15px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 15px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 10px;
+            transition: all 0.3s;
+        }
+
+        .test-api-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="chatroom-container">
+        <div class="chat-header">
+            <h1>🏢 Company AI Assistant</h1>
+            <p>Ask questions about company operations and activities</p>
+            <button class="test-api-button" onclick="testAPI()">🔍 Test API Connection</button>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="message">
+                <div class="message-answer">
+                    <div class="bubble">
+                        👋 Hello! I'm your company AI assistant. Ask me anything about our operations, staff, or activities!
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-input-area">
+            <input 
+                type="text" 
+                class="chat-input" 
+                id="questionInput" 
+                placeholder="Type your question here..."
+                onkeypress="handleKeyPress(event)"
+            >
+            <button class="send-button" id="sendButton" onclick="sendQuestion()">
+                Send
+            </button>
+            <button class="clear-button" onclick="clearChat()">
+                Clear
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Automatically use the current host and port
+        const API_BASE = `${window.location.protocol}//${window.location.host}/api`;
+        const chatMessages = document.getElementById('chatMessages');
+        const questionInput = document.getElementById('questionInput');
+        const sendButton = document.getElementById('sendButton');
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendQuestion();
+            }
+        }
+
+        function scrollToBottom() {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function addMessage(question, answer, timestamp) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            
+            messageDiv.innerHTML = `
+                <div class="message-question">
+                    <div class="bubble">${escapeHtml(question)}</div>
+                </div>
+                <div class="message-answer">
+                    <div class="bubble">
+                        ${escapeHtml(answer)}
+                        <div class="timestamp">${timestamp}</div>
+                    </div>
+                </div>
+            `;
+            
+            chatMessages.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function showLoading() {
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'message loading';
+            loadingDiv.id = 'loadingIndicator';
+            loadingDiv.innerHTML = `
+                <div class="message-answer">
+                    <div class="bubble">
+                        Thinking<span class="loading-dots"><span>.</span><span>.</span><span>.</span></span>
+                    </div>
+                </div>
+            `;
+            chatMessages.appendChild(loadingDiv);
+            scrollToBottom();
+        }
+
+        function hideLoading() {
+            const loadingDiv = document.getElementById('loadingIndicator');
+            if (loadingDiv) {
+                loadingDiv.remove();
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function sendQuestion() {
+            const question = questionInput.value.trim();
+            
+            if (!question) {
+                alert('Please enter a question');
+                return;
+            }
+
+            // Disable input
+            questionInput.disabled = true;
+            sendButton.disabled = true;
+            
+            // Show user's question immediately
+            const userMessageDiv = document.createElement('div');
+            userMessageDiv.className = 'message';
+            userMessageDiv.innerHTML = `
+                <div class="message-question">
+                    <div class="bubble">${escapeHtml(question)}</div>
+                </div>
+            `;
+            chatMessages.appendChild(userMessageDiv);
+            scrollToBottom();
+
+            // Clear input
+            questionInput.value = '';
+            
+            // Show loading
+            showLoading();
+
+            try {
+                const response = await fetch(`${API_BASE}/ask`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ question })
+                });
+
+                const data = await response.json();
+                
+                hideLoading();
+
+                if (response.ok) {
+                    // Remove user's question (we'll add it back with the answer)
+                    userMessageDiv.remove();
+                    addMessage(data.question, data.answer, data.timestamp);
+                } else {
+                    hideLoading();
+                    const errorMsg = data.error || 'Unknown error';
+                    const tipMsg = data.tip ? '\n\n💡 ' + data.tip : '';
+                    
+                    // Show error in chat instead of alert
+                    const errorBubble = document.createElement('div');
+                    errorBubble.className = 'message';
+                    errorBubble.innerHTML = `
+                        <div class="message-answer">
+                            <div class="bubble" style="background: #ffe6e6; color: #c00;">
+                                ⚠️ ${escapeHtml(errorMsg)}${escapeHtml(tipMsg)}
+                            </div>
+                        </div>
+                    `;
+                    chatMessages.appendChild(errorBubble);
+                    scrollToBottom();
+                }
+            } catch (error) {
+                hideLoading();
+                alert('Failed to connect to server: ' + error.message);
+                userMessageDiv.remove();
+            } finally {
+                // Re-enable input
+                questionInput.disabled = false;
+                sendButton.disabled = false;
+                questionInput.focus();
+            }
+        }
+
+        async function clearChat() {
+            if (!confirm('Are you sure you want to clear the chat history?')) {
+                return;
+            }
+
+            try {
+                await fetch(`${API_BASE}/clear`, {
+                    method: 'POST'
+                });
+                
+                chatMessages.innerHTML = `
+                    <div class="message">
+                        <div class="message-answer">
+                            <div class="bubble">
+                                👋 Hello! I'm your company AI assistant. Ask me anything about our operations, staff, or activities!
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                alert('Failed to clear history: ' + error.message);
+            }
+        }
+
+        async function testAPI() {
+            try {
+                showLoading();
+                const response = await fetch(`${API_BASE}/test-connection`);
+                const data = await response.json();
+                hideLoading();
+                
+                if (data.status === 'success') {
+                    const isJsonText = data.is_json ? '✅ YES' : '❌ NO (This is the problem!)';
+                    const message = `
+API Test Results:
+━━━━━━━━━━━━━━━
+📍 URL: ${data.url}
+📄 Content Type: ${data.content_type}
+✓ Returns JSON: ${isJsonText}
+🔢 Status Code: ${data.status_code}
+
+Preview:
+${data.preview}
+
+${data.is_json ? '✅ Your API is working correctly!' : '⚠️ WARNING: Your API returns HTML, not JSON!\n\nPlease fix your API endpoint to return JSON format instead of HTML.'}
+                    `;
+                    alert(message);
+                } else {
+                    alert('API Test Failed:\n' + data.error);
+                }
+            } catch (error) {
+                hideLoading();
+                alert('Connection test failed:\n' + error.message);
+            }
+        }
+
+        // Load history on page load
+        async function loadHistory() {
+            try {
+                const response = await fetch(`${API_BASE}/history`);
+                const history = await response.json();
+                
+                history.forEach(entry => {
+                    addMessage(entry.question, entry.answer, entry.timestamp);
+                });
+            } catch (error) {
+                console.error('Failed to load history:', error);
+            }
+        }
+
+        // Initialize
+        loadHistory();
+        questionInput.focus();
+    </script>
+</body>
+</html>
