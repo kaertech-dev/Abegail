@@ -30,7 +30,7 @@ def handle_activity_query(message: str) -> Optional[Dict[str, str]]:
         }
     
     # Check for employee-specific activity
-    if any(word in msg_lower for word in ['activity for', 'activities for', 'what is', 'what are']):
+    if any(word in msg_lower for word in ['activity for', 'activities for', 'doing']):
         employee_name = extract_employee_name(message)
         
         if employee_name:

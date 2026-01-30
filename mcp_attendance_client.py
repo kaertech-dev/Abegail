@@ -174,7 +174,7 @@ class AttendanceMCPClient:
         result = await self.session.call_tool("get_absent_employees", arguments)
         return result.content[0].text if result.content else "No response"
     
-    async def get_latest_entries(self, limit: int = 10) -> str:
+    async def get_latest_entries(self, start_time: Optional[str], end_time: Optional[str], where: str = 'last', limit: int = 10) -> str:
         """
         Get latest attendance entries
         
@@ -184,7 +184,10 @@ class AttendanceMCPClient:
         Returns:
             Latest attendance entries
         """
-        arguments = {"limit": limit}
+        arguments = {"where": where, "limit": limit}
+        if start_time:
+            arguments["start_time"] = start_time
+            arguments["end_time"] = end_time
         result = await self.session.call_tool("get_latest_entries", arguments)
         return result.content[0].text if result.content else "No response"
 
@@ -269,11 +272,11 @@ class AttendanceService:
         return self._run_async(_get())
     
     # add tag to allow for different date, as well as earliest or within a time range
-    def get_latest_entries(self, limit: int = 10) -> str:
+    def get_latest_entries(self, start_time: Optional[str], end_time: Optional[str], where: str = 'last', limit: int = 10) -> str:
         """Get latest entries (sync)"""
         async def _get():
             await self._ensure_connected()
-            return await self._client.get_latest_entries(limit)
+            return await self._client.get_latest_entries(start_time, end_time, where, limit)
         return self._run_async(_get())
     
     def cleanup(self):
@@ -309,8 +312,9 @@ def detect_attendance_query(message: str) -> Optional[Dict]:
     # Check for attendance keywords
     attendance_keywords = [
         'attendance', 'present', 'absent', 'time in', 'clock in', 'check in', 
-        'timeout', 'time out', 'who is here', 'who is in', 'record',
+        'who is here', 'who is in', 'record', 'entries',
         'department', 'headcount', 'employee', 'employees',
+        'timeout', 'time out', 'clock out',
         'your_custom_keyword'
     ]
 
@@ -334,7 +338,8 @@ def detect_attendance_query(message: str) -> Optional[Dict]:
         r'is\s+(KE\d{4})\s+present',
         r'check\s+(\w+)\s+attendance',
         r'what\s+time\s*',
-        r'(\w+)\s*timeout\s*\w*',
+        r'(\w+)\s*time\s*out\s*\w*',
+        r'(\w+) clock out'
     ]
     
     for pattern in presence_patterns:
@@ -362,6 +367,19 @@ def detect_attendance_query(message: str) -> Optional[Dict]:
     # 4. Latest entries: "latest attendance" or "recent attendance"
     if 'latest' in msg_lower or 'recent' in msg_lower:
         query_info['type'] = 'latest_entries'
+        query_info['params']['where'] = 'last'
+    
+    if 'earliest' in msg_lower or 'first entries' in msg_lower:
+        query_info['type'] = 'latest_entries'
+        query_info['params']['where'] = 'first'
+    
+    if 'entries between' in msg_lower:
+        query_info['type'] = 'latest_entries'
+        query_info['params']['where'] = 'middle'
+        time_regex = r'(\d{2}:\d{2})\s+(to|and)\s+(\d{2}:\d{2})'
+        time_match = re.search(time_regex, msg_lower)
+        query_info['params']['start_time'] = time_match.group(1)
+        query_info['params']['end_time'] = time_match.group(3)
     
     # 5. General attendance query with date
     if not query_info['type']:
@@ -369,33 +387,18 @@ def detect_attendance_query(message: str) -> Optional[Dict]:
     
     # Extract date information
     today = datetime.now().date()
-    
-    if 'today' in msg_lower:
+    date_results = extractDate(msg_lower)
+    if len(date_results) == 0:
+        # no explicit date was given, assume today
         query_info['params']['date'] = today.isoformat()
-    elif 'yesterday' in msg_lower:
-        query_info['params']['date'] = (today - timedelta(days=1)).isoformat()
-    elif 'last week' in msg_lower:
-        query_info['params']['start_date'] = (today - timedelta(days=7)).isoformat()
-        query_info['params']['end_date'] = today.isoformat()
-        query_info['type'] = 'attendance_range'
-    elif match := re.search(r'last\s+(\d+)\s+days?', msg_lower):
-        days = int(match.group(1))
-        query_info['params']['start_date'] = (today - timedelta(days=days)).isoformat()
-        query_info['params']['end_date'] = today.isoformat()
-        query_info['type'] = 'attendance_range'
+    elif len(date_results) == 1:
+        # only one date was given
+        query_info['params']['date'] = date_results[0]
     else:
-        date_results = extractDate(msg_lower)
-        if len(date_results) == 0:
-            # no explicit date was given, assume today
-            query_info['params']['date'] = today.isoformat()
-        elif len(date_results) == 1:
-            # only one date was given
-            query_info['params']['date'] = date_results[0]
-        else:
-            # two dates were given, i.e. a range
-            query_info['params']['start_date'] = date_results[0]
-            query_info['params']['end_date'] = date_results[1]
-            query_info['type'] = 'attendance_range'
+        # two dates were given, i.e. a range
+        query_info['params']['start_date'] = date_results[0]
+        query_info['params']['end_date'] = date_results[1]
+        query_info['type'] = 'attendance_range'
     
     # Extract employee name/ID if not already found
     if 'employee_identifier' not in query_info['params']:
@@ -409,6 +412,9 @@ def detect_attendance_query(message: str) -> Optional[Dict]:
                 r'for\s+(\w+)',
                 r'of\s+(\w+)',
                 r'attendance\s+(\w+)',
+                r'(\w+)\s+attendance',
+                r'(\w+)\s+record',
+                r'record of (\w+)'
             ]
             for pattern in name_patterns:
                 match = re.search(pattern, msg_lower)
@@ -440,14 +446,14 @@ def handle_attendance_query_via_mcp(message: str) -> Optional[str]:
         params = query_info['params']
         
         if query_type == 'presence_check':
-            return service.check_presence(
+            answer = service.check_presence(
                 params['employee_identifier'],
                 params.get('date')
             )
         
         elif query_type == 'dep_headcount':
             curr_time = str(datetime.now().time())
-            return service.department_headcount(
+            answer = service.department_headcount(
                 params.get('department'),
                 params.get('date'),
                 params.get('start_time', curr_time[:5])
@@ -455,32 +461,39 @@ def handle_attendance_query_via_mcp(message: str) -> Optional[str]:
         
         elif query_type == 'count_operators':
             curr_time = str(datetime.now().time())
-            return service.count_present_operators(
+            answer = service.count_present_operators(
                 params.get('date'),
                 params.get('start_time', curr_time[:5])
             )
         
         elif query_type == 'absent_list':
-            return service.get_absent_employees(params.get('date'))
+            answer = service.get_absent_employees(params.get('date'))
         
         elif query_type == 'latest_entries':
-            return service.get_latest_entries(params.get('limit', 10))
+            answer = service.get_latest_entries(
+                params.get('start_time'),
+                params.get('end_time'),
+                params['where'],
+                params.get('limit', 10)
+            )
         
         elif query_type == 'attendance_range':
-            return service.get_attendance_range(
+            answer = service.get_attendance_range(
                 params['start_date'],
                 params['end_date'],
                 params.get('employee_identifier')
             )
         
         elif query_type == 'general_attendance':
-            return service.check_attendance(
+            answer = service.check_attendance(
                 params.get('date'),
                 params.get('employee_identifier')
             )
         
         else:
             return None
+        
+        return {'answer': answer, 'response_type': 'attendance'}
     
     except Exception as e:
         return f"❌ **Attendance Query Error:** {str(e)}\n\nPlease check if the MCP server is running."

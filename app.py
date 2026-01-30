@@ -15,8 +15,10 @@ from query_router import extract_database_name
 from session_manager import get_session_manager
 from activity_routes import handle_activity_query
 from attendance_routes import handle_attendance_query
-from mcp_attendance_client import handle_attendance_query_via_mcp
 from database_routes import handle_database_query
+
+from mcp_activity_client import handle_activity_query_via_mcp
+from mcp_attendance_client import handle_attendance_query_via_mcp
 
 
 app = Flask(__name__)
@@ -39,8 +41,8 @@ def index():
 
 @app.route('/api/download/<path:filename>', methods=['GET'])
 def download_file(filename):
-    base_path = "c:/Users/ai/OneDrive/Documents/project_abegail/"
-    # print(filename)
+    # method to export to csv
+    base_path = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/csv_files/"
     return send_from_directory(base_path, filename, as_attachment=True)
 
 @app.route('/api/chat', methods=['POST'])
@@ -89,25 +91,22 @@ def chat():
         database = extract_database_name(message) or DEFAULT_DATABASE
         
         # Route query to appropriate handler
-        handler_response = None
+        result = None
         
         # Priority 1: Activity Monitoring
-        handler_response = handle_activity_query(message)
-        result = handler_response
+        result = handle_activity_query_via_mcp(message)
         
         # Priority 2: Attendance
-        if not handler_response:
-            handler_response = handle_attendance_query_via_mcp(message)
-            result = {'answer': handler_response,
-                    'response_type': 'attendance'}
+        if not result:
+            result = handle_attendance_query_via_mcp(message)
         
         # Priority 3: Database queries
-        if not handler_response:
-            handler_response = handle_database_query(message, database, conversation_context, relevant_facts_text)
-            result = handler_response
+        # if not handler_response:
+        #     handler_response = handle_database_query(message, database, conversation_context, relevant_facts_text)
+        #     result = handler_response
         
         # Default: General AI response
-        if not handler_response:
+        if not result:
             result = {
                 'answer': ask_general_question(message, conversation_context, relevant_facts_text),
                 'response_type': 'general'

@@ -7,19 +7,22 @@ month_names = ["january", "february", "march", "april", "may", "june",
 
 # return value = list of strings in iso format, e.g. ['YYYY-MM-DD', '2026-04-05']
 
-# def keyword_check(message: str) -> List[date]:
-#     pattern = r'month of (\w+)\s+(\d{4})\s*'
-#     match = re.findall(pattern, message, flags=re.IGNORECASE)
-#     if match:
-#         year = int(match[0][1])
-#         for i, month in enumerate(month_names, 1):
-#             m_idx = re.findall(rf'\b({month}|{month[:3]})\s*', message)
-#             if m_idx:
-#                 month = i
-#                 break
-#         start_obj = date(year, month, 1)
-#         end_obj = date(year, month, 31)
-#     return None
+def keyword_check(message: str) -> List[str]:
+    date_list = []
+    today = date.today()
+    if 'today' in message:
+        date_list.append(today.isoformat())
+    elif 'yesterday' in message:
+        date_list.append((today - timedelta(days=1)).isoformat())
+    elif 'last week' in message:
+        date_list.append((today - timedelta(days=7)).isoformat())
+        date_list.append(today.isoformat())
+    elif match := re.search(r'last\s+(\d+)\s+days?', message):
+        days = int(match.group(1))
+        date_list.append((today - timedelta(days=days)).isoformat())
+        date_list.append(today.isoformat())
+
+    return date_list
 
 def validate(date_list: List) -> List:
     obj_list = []
@@ -32,7 +35,12 @@ def validate(date_list: List) -> List:
     obj_list.sort()
     return obj_list
 
-def extractDate(message: str) -> List[date]:  
+def extractDate(message: str) -> List[date]:
+    # check for time markers
+    kw = keyword_check(message)
+    if len(kw) > 0:
+        return kw
+    
     # check for date in iso format
     iso_check = r'(\d{4}-\d{2}-\d{2})'
     iso_match = re.findall(iso_check, message)

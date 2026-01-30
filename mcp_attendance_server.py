@@ -45,6 +45,8 @@ DEVICE_LOCATIONS = {
 
 CHECKIN_TYPES = ['time in', 'check in', 'clock in', 'in', 'Time In', 'Check In']
 
+path_name = './csv_files/'
+
 # ==================== DATABASE HANDLER ====================
 
 class AttendanceDB:
@@ -199,23 +201,45 @@ class AttendanceDB:
                     WHERE t2.department LIKE %s
                     AND DATE(t1.`timestamp`) = %s
                     AND TIME(t1.`timestamp`) <= %s
+                    ORDER BY employee_name
                 """, (f'%{dept}%', target_date, start_time,))
             return cursor.fetchall()
         finally:
             cursor.close()
             conn.close()
     
-    def get_latest_entries(self, limit: int = 10) -> List[Dict]:
+    def get_latest_entries(self, start_time: Optional[str], end_time: Optional[str], where: str = 'last', limit: int = 10) -> List[Dict]:
         """Get latest attendance entries"""
         conn = self.connect()
         try:
             cursor = conn.cursor(dictionary=True)
-            query = """
-                SELECT * FROM `raw` 
-                ORDER BY `timestamp` DESC 
-                LIMIT %s
-            """
-            cursor.execute(query, (limit,))
+            if where == 'last':
+                query = """
+                    SELECT * FROM `raw` 
+                    ORDER BY `timestamp` DESC 
+                    LIMIT %s
+                """
+                cursor.execute(query, (limit,))
+            elif where == 'first':
+                today = date.today().isoformat()
+                query = """
+                    SELECT * FROM `raw` 
+                    WHERE DATE(timestamp) LIKE %s
+                    ORDER BY `timestamp` ASC 
+                    LIMIT %s
+                """
+                cursor.execute(query, (today, limit,))
+            elif where == 'middle':
+                today = date.today().isoformat()
+                query = """
+                    SELECT * FROM `raw` 
+                    WHERE DATE(timestamp) LIKE %s
+                    AND TIME(`timestamp`) BETWEEN %s AND %s
+                    ORDER BY `timestamp` ASC
+                    LIMIT 30
+                """
+                cursor.execute(query, (today, start_time, end_time,))
+            
             records = cursor.fetchall()
             return self._add_locations(records)
         finally:
@@ -422,11 +446,24 @@ async def handle_list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "start_time": {
+                        "type": "string",
+                        "description": "Optional start time"
+                    },
+                    "end_time": {
+                        "type": "string",
+                        "description": "Optional end time"
+                    },
+                    "where": {
+                        "type": "string",
+                        "description": "Setting whether to get earliest, latest, or entries between given time"
+                    },
                     "limit": {
                         "type": "integer",
                         "description": "Number of entries to retrieve (default: 10, max: 100)"
                     }
-                }
+                },
+                "required": ["where"]
             }
         )
     ]
@@ -480,13 +517,21 @@ async def handle_check_attendance(arguments: dict) -> list[TextContent]:
         if employee_id:
             text += f" for **{employee_id}**"
     else:
-        text = f"# 📅 Attendance Records - {target_date}\n\n"
+        # prepare a csv file while formatting the output string
+        filename = 'attendance_' + target_date.isoformat() + '.csv'
+        csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
+        writer = csv.DictWriter(csvfile, fieldnames=['employee_name', 'employee_num', 'timestamp', 'location'], extrasaction='ignore')
+        writer.writeheader()
+
+        text = filename + f"# 📅 Attendance Records - {target_date}\n\n"
         if employee_id:
             text += f"**Filter:** {employee_id}\n"
         text += f"**Total records:** {len(records)}\n\n"
         
-        for i, record in enumerate(records[:20], 1):
-            text += f"{i}. {format_attendance_record(record)}\n"
+        for i, record in enumerate(records, 1):
+            if i <= 20:
+                text += f"{i}. {format_attendance_record(record)}\n"
+            writer.writerow(record)
         
         if len(records) > 20:
             text += f"\n*Showing first 20 of {len(records)} records*"
@@ -525,7 +570,7 @@ async def handle_attendance_range(arguments: dict) -> list[TextContent]:
     else:
         # prepare a csv file while formatting the output string
         filename = '_'.join([employee_id, start_date.isoformat(), end_date.isoformat()]) + '.csv'
-        csvfile = open(filename, 'w', newline='', encoding='utf-8')
+        csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
         writer = csv.DictWriter(csvfile, fieldnames=['employee_name', 'employee_num', 'timestamp'], extrasaction='ignore')
         writer.writeheader()
 
@@ -602,7 +647,7 @@ async def handle_dept_headcount(arguments: dict) -> list[TextContent]:
 
     # prepare a csv file while formatting the output string
     filename = dept_input.replace(" ", "_") + '_' + target_date.isoformat() + '.csv'
-    csvfile = open(filename, 'w', newline='', encoding='utf-8')
+    csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
     writer = csv.DictWriter(csvfile, fieldnames=['employee_name', 'employee_num', 'department'], extrasaction='ignore')
     writer.writeheader()
     
@@ -655,17 +700,31 @@ async def handle_absent_employees(arguments: dict) -> list[TextContent]:
 
 async def handle_latest_entries(arguments: dict) -> list[TextContent]:
     """Handle latest entries retrieval"""
+    today = date.today().isoformat()
     limit = min(arguments.get("limit", 10), 100)
+    where = arguments["where"]
+    start_time = arguments.get("start_time")
+    end_time = arguments.get("end_time")
     
-    records = attendance_db.get_latest_entries(limit)
+    records = attendance_db.get_latest_entries(start_time, end_time, where, limit)
+
+    if where == 'last':
+        filename = 'latest_entries_' + today + '.csv'
+        text = filename + f"# 🕐 Latest Attendance Entries\n\n"
+    elif where == 'first':
+        filename = 'earliest_entries_' + today + '.csv'
+        text = filename + f"# 🕐 Earliest Attendance Entries\n\n"
+        text += f"**Date:** {today}\n\n"
+    elif where == 'middle':
+        filename = 'entries_' + today + '_' + start_time + '_' + end_time + '.csv'
+        text = filename + f"# 🕐 Attendance Entries\n\n"
+        text += f"**Date:** {today} from {start_time} to {end_time}\n\n"
 
     # prepare a csv file while formatting the output string
-    filename = 'latest_entries_' + date.today().isoformat() + '.csv'
-    csvfile = open(filename, 'w', newline='', encoding='utf-8')
+    csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
     writer = csv.DictWriter(csvfile, fieldnames=['timestamp', 'employee_name', 'employee_num', 'location'], extrasaction='ignore')
     writer.writeheader()
     
-    text = filename + f"# 🕐 Latest Attendance Entries\n\n"
     text += f"**Count:** {len(records)}\n\n"
     
     for i, record in enumerate(records, 1):

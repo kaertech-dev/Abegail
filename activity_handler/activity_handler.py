@@ -94,7 +94,7 @@ def is_activity_query(message: str) -> bool:
     msg_lower = message.lower()
     activity_keywords = [
         'activity', 'activities', 'monitoring',
-        'what are they doing', 'what is', 'who is doing',
+        'what are they doing', 'who is doing',
         'show activity', 'activity log', 'activity report',
         'activity data', 'activity for','show activities for','show activities',
         'can you show activity', 'I want to see activity',

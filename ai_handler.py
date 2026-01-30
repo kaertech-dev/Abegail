@@ -118,7 +118,7 @@ Answer:"""
         )
 
         # Shorter timeout for general questions
-        timeout = 45 if "1.5b" in MODEL_NAME else 60
+        timeout = 30 if "1.5b" in MODEL_NAME else 45
         stdout, stderr = process.communicate(input=full_prompt, timeout=timeout)
         
         if process.returncode != 0:
