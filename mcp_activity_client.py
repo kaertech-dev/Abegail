@@ -12,6 +12,15 @@ from ai_handler import ask_general_question
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+class CMSobject:
+    def __init__(self, customer: str='', model: str='', station: str=''):
+        self.customer = customer
+        self.model = model
+        self.station = station
+        self.list = [customer, station, model]
+    def get_list(self):
+        return [self.customer, self.station, self.model]
+
 class ActivityMCPClient:
     """Client to interact with Activity MCP Server"""
     
@@ -139,7 +148,7 @@ def detect_activity_query(message: str) -> Optional[Dict]:
     activity_keywords = [
         'activity', 'activities', 'monitoring', 'where is',
         'what are they doing', 'who is doing', 'doing', 'working',
-        'productivity', 'output', 'cycle time', 'target',
+        'productivity', 'output', 'cycle time', 'target', 'start time', 'end time',
         'station', 'customer', 'model', 'operator'
     ]
 
@@ -148,16 +157,17 @@ def detect_activity_query(message: str) -> Optional[Dict]:
     
     query_info = {'type': None, 'params': {}}
 
+    # check muna all caps for customer, model, or station?
+
     # 1. check for employee name and operator-specific parameter
     ops_patterns = {
-        'average cycle time': r'(what is)?\s*([A-Za-z]+)\s+average cycle time',
-        'total output': r'(what is)?\s*([A-Za-z]+)\s+total output',
+        'target': r'(is)?\s*([A-Za-z]+)\s+(above|below) the target',
         'cycle time': r'(what is)?\s*([A-Za-z]+)\s+cycle time',
         'start time': r'(what is)?\s*([A-Za-z]+)\s+start',
         'end time': r'(what is)?\s*([A-Za-z]+)\s+end',
         'output': r'(what is)?\s*([A-Za-z]+)\s+output',
         'status': r'(what is)?\s*([A-Za-z]+)\s+status',
-        'where': r'(where is)\s*([A-Za-z]+)\s*',
+        'where': r'where\s+(was|is)\s+([A-Za-z]+)\s*',
         'station': r'(what station is)\s*([A-Za-z]+)\s*'
     }
     for kw, pattern in ops_patterns.items():
@@ -183,18 +193,38 @@ def detect_activity_query(message: str) -> Optional[Dict]:
     customer_find = r'customer ([A-Za-z]+)'
     model_find = r'model ([A-Za-z0-9]+)'
     station_find = r'([A-Za-z0-9]+) station'
+    cms_list = []
 
     c_match = re.search(customer_find, msg_lower)
     if c_match:
+        cms_list.append(c_match.group(1))
         query_info['params']['customer'] = c_match.group(1)
 
     m_match = re.search(model_find, msg_lower)
     if m_match:
+        cms_list.append(m_match.group(1))
         query_info['params']['model'] = m_match.group(1)
 
+    cms_keywords = [
+        'list stations',
+        'list of stations',
+        'show stations',
+        'what are the stations'
+    ]
+
+    if any([c_match,m_match]) and any(kw in msg_lower for kw in cms_keywords):
+        # query is asking for list of stations given the customer or model
+        query_info['params']['stats'] = 'list_stn'
+        query_info['type'] = 'aggregate_data'
+    
     s_match = re.search(station_find, msg_lower)
     if s_match:
-        query_info['params']['station'] = s_match.group(1)
+        cms_list.append(s_match.group(1))
+        if query_info['params']['stats'] != 'list_stn':
+            query_info['params']['station'] = s_match.group(1)
+    
+    if query_info['params'].get('emp_id') in cms_list:
+        query_info['type'] = 'aggregate_data'
     
     agg_keywords = [
         'who is at',
@@ -204,10 +234,10 @@ def detect_activity_query(message: str) -> Optional[Dict]:
         'list of operator'
     ]
 
-    if not query_info['type'] and any([c_match, m_match, s_match]):
-        # query has general parameter, but no name or operator-specific parameter
-        if any(kw in msg_lower for kw in agg_keywords):
-            query_info['type'] = 'aggregate_data'
+    if any(kw in msg_lower for kw in agg_keywords):
+        # query is looking for list of operators
+        query_info['params']['stats'] = 'list_ops'
+        query_info['type'] = 'aggregate_data'
 
     # 3. check for summary keywords
     summary_patterns = [

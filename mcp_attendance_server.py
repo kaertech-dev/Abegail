@@ -78,7 +78,7 @@ class AttendanceDB:
                     )
                     ORDER BY `timestamp` ASC
                 """
-                search_pattern = f"%{employee_identifier}%"
+                search_pattern = f"% {employee_identifier}%"
                 cursor.execute(query, (target_date, search_pattern, search_pattern))
             else:
                 query = "SELECT * FROM `raw` WHERE DATE(`timestamp`) = %s ORDER BY `timestamp` ASC"
@@ -108,7 +108,7 @@ class AttendanceDB:
                     )
                     ORDER BY `timestamp` ASC
                 """
-                search_pattern = f"%{employee_identifier}%"
+                search_pattern = f"% {employee_identifier}%"
                 cursor.execute(query, (start_date, end_date, search_pattern, search_pattern))
             else:
                 query = """

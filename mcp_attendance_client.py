@@ -312,7 +312,7 @@ def detect_attendance_query(message: str) -> Optional[Dict]:
     # Check for attendance keywords
     attendance_keywords = [
         'attendance', 'present', 'absent', 'time in', 'clock in', 'check in', 
-        'who is here', 'who is in', 'record', 'entries',
+        'who is here', 'who is in', 
         'department', 'headcount', 'employee', 'employees',
         'timeout', 'time out', 'clock out',
         'your_custom_keyword'
@@ -337,7 +337,7 @@ def detect_attendance_query(message: str) -> Optional[Dict]:
         r'is\s+(\w+)\s+here',
         r'is\s+(KE\d{4})\s+present',
         r'check\s+(\w+)\s+attendance',
-        r'what\s+time\s*',
+        # r'what\s+time\s*',
         r'(\w+)\s*time\s*out\s*\w*',
         r'(\w+) clock out'
     ]

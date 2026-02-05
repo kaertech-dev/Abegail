@@ -266,9 +266,9 @@ function copyMessage() {
     hideContextMenu();
 }
 
-function downloadCSV(filename) {
+async function downloadCSV(filename) {
     try{
-        const base_path = "http://127.0.0.1:8080/api/download/" + filename;
+        const base_path = "http://192.168.1.53:8080/api/download/" + filename;
         const url = URL.parse(base_path);
         const a = document.createElement('a');
         a.href = url;
@@ -370,7 +370,16 @@ function playSound(type) {
 }
 
 function textToSpeech(text) {
-
+    if (!selectedMessageId) return;
+    
+    const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
+    if (messageBubble) {
+        const bubble = messageBubble.querySelector('.bubble');
+        const text = bubble.textContent.trim();
+        // insert function to read
+    }
+    
+    hideContextMenu();
 }
 
 function addMessage(message, isUser = false, metadata = {}) {
@@ -411,7 +420,7 @@ function addMessage(message, isUser = false, metadata = {}) {
         message = message.substring(idx);
         csvButton = `
             <div class="csv-action">
-                <button class="download-csv" onclick="downloadCSV('${filename}')" title="download csv">Download csv file</button>
+                <button type="button" class="download-csv" onclick="downloadCSV('${filename}')" title="download csv">Download csv file</button>
             </div>
         `;
     }

@@ -72,7 +72,7 @@ def extractDate(message: str) -> List[date]:
     # check for month, and associated year if any
     for i, month in enumerate(month_names, 1):
         # case where date is given before month, e.g. 6 April
-        month_check = date_regex + rf'\w*\s+({month}|{month[:3]})\s*' + year_regex
+        month_check = date_regex + rf'\w*\s+({month}|{month[:3]}).?\s*' + year_regex
         month_match = re.findall(month_check, message, flags=re.IGNORECASE)
         date_idx = 0
 
