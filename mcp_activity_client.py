@@ -1,12 +1,15 @@
 import asyncio
 import json
 import re
+import os
+import subprocess
 from datetime import date, timedelta
 from typing import Dict, Optional, List
 from contextlib import asynccontextmanager
 from date_parser import extractDate
 
-from ai_handler import ask_general_question
+from ai_handler import clean_response
+from mcp_activity_server import ActivityAPI
 
 # MCP Client imports
 from mcp import ClientSession, StdioServerParameters
@@ -32,11 +35,11 @@ class ActivityMCPClient:
             server_script_path: Path to the MCP server script
         """
         self.server_script_path = server_script_path
-        # self.api = ActivityAPI(api_url)
         self.session = None
         self.read_stream = None
         self.write_stream = None
         self._client_context = None
+        self.available_tools = []
     
     async def connect(self):
         """Connect to the MCP server"""
@@ -136,6 +139,14 @@ def get_activity_service(server_script_path: str = "c:/Users/ai/OneDrive/Documen
         _activity_service = ActivityService(server_script_path)
     return _activity_service
 
+def get_name(raw_name: str) -> str:
+    l_name = raw_name.split(',')
+    if len(l_name) > 1:
+        new_name = l_name[1] + ' ' + l_name[0]
+        return new_name.strip()
+    else:
+        return raw_name.strip()
+
 def detect_activity_query(message: str) -> Optional[Dict]:
     """
     Detect if message is an activity query and extract parameters
@@ -157,30 +168,40 @@ def detect_activity_query(message: str) -> Optional[Dict]:
     
     query_info = {'type': None, 'params': {}}
 
-    # check muna all caps for customer, model, or station?
+    # 1. check for dates
+    today = date.today()
+    date_results = extractDate(message)
+    if len(date_results) == 1:
+        query_info['params']['date'] = date_results[0]
+    elif len(date_results) > 1:
+        query_info['params']['date'] = date_results[0]
+        query_info['params']['end_date'] = date_results[1]
+    else:
+        # no explicit date was given, assume today
+        query_info['params']['date'] = today.isoformat()
 
-    # 1. check for employee name and operator-specific parameter
+    # 2. check for employee name and operator-specific parameter
     ops_patterns = {
-        'target': r'(is)?\s*([A-Za-z]+)\s+(above|below) the target',
-        'cycle time': r'(what is)?\s*([A-Za-z]+)\s+cycle time',
-        'start time': r'(what is)?\s*([A-Za-z]+)\s+start',
-        'end time': r'(what is)?\s*([A-Za-z]+)\s+end',
-        'output': r'(what is)?\s*([A-Za-z]+)\s+output',
-        'status': r'(what is)?\s*([A-Za-z]+)\s+status',
-        'where': r'where\s+(was|is)\s+([A-Za-z]+)\s*',
-        'station': r'(what station is)\s*([A-Za-z]+)\s*'
+        'target': r'(?:is)?\s*([A-Za-z,\s]+)\s+(?:above|below|meeting)\s*(?:the|his|her)?\s*target',
+        'cycle time': r'(?:.hat is)?\s*([A-Za-z,\s]+)\s+cycle time',
+        'start time': r'(?:.hat is)?\s*([A-Za-z,\s]+)\s+start',
+        'end time': r'(?:.hat is)?\s*([A-Za-z,\s]+)\s+end',
+        'output': r'(?:.hat is)?\s*([A-Za-z,\s]+)\s+output',
+        'status': r'(?:.hat is)?\s*([A-Za-z,\s]+)\s+status',
+        'where': r'.here\s+(?:was|is)\s+([A-Za-z,\s]+(?=on|in|at|\?))',
+        'station': r'(?:.hat station is)\s*([A-Za-z,\s]+)\s*'
     }
     for kw, pattern in ops_patterns.items():
         if kw in msg_lower:
-            name_match = re.search(pattern, msg_lower)
+            name_match = re.search(pattern, message)
             if name_match:
                 # query has name and operator stat
-                query_info['params']['emp_id'] = name_match.group(2)
-                query_info['params']['stats'] = kw
+                query_info['params']['emp_id'] = get_name(name_match.group(1))
+                query_info['params']['stats'] = kw.lower()
                 query_info['type'] = 'operator_data'
             else:
                 # query has operator stat but no name
-                query_info['params']['stats'] = kw
+                query_info['params']['stats'] = kw.lower()
                 query_info['type'] = 'aggregate_data'
             break
     
@@ -189,7 +210,7 @@ def detect_activity_query(message: str) -> Optional[Dict]:
     if empnum_match:
         query_info['params']['emp_id'] = empnum_match.group(1)
 
-    # 2. check for general parameters: customer, model, or station
+    # 3. check for general parameters: customer, model, or station
     customer_find = r'customer ([A-Za-z]+)'
     model_find = r'model ([A-Za-z0-9]+)'
     station_find = r'([A-Za-z0-9]+) station'
@@ -239,7 +260,7 @@ def detect_activity_query(message: str) -> Optional[Dict]:
         query_info['params']['stats'] = 'list_ops'
         query_info['type'] = 'aggregate_data'
 
-    # 3. check for summary keywords
+    # 4. check for summary keywords
     summary_patterns = [
         r'\s*([A-Za-z]+)\s+activity',
         r'activity for\s+([A-Za-z]+)',
@@ -266,21 +287,9 @@ def detect_activity_query(message: str) -> Optional[Dict]:
         # query is looking for overall summary
         query_info['type'] = 'all_data'
     
-    # 4. check for date/s
-    today = date.today()
-    date_results = extractDate(msg_lower)
-    if len(date_results) == 1:
-        query_info['params']['date'] = date_results[0]
-    elif len(date_results) > 1:
-        query_info['params']['date'] = date_results[0]
-        query_info['params']['end_date'] = date_results[1]
-    else:
-        # no explicit date was given, assume today
-        query_info['params']['date'] = today.isoformat()
-    
     return query_info if query_info['type'] else None
 
-def handle_activity_query_via_mcp(message: str) -> Optional[str]:
+def handle_activity_query_via_mcp(message: str, context: str) -> Optional[str]:
     """
     Handle activity query through MCP server
     
@@ -294,13 +303,6 @@ def handle_activity_query_via_mcp(message: str) -> Optional[str]:
     
     if not query_info:
         return None
-    
-    # analysis = {'primary_intent': 'activity', 
-    #             'question_type': 'quantitative', 
-    #             'temporal_context': {'has_time_reference': 1, 'specific_date': '2026-01-28'},
-    #             'entities': {}}
-    # deepsought = ask_general_question(question=message, query_analysis=analysis)
-    # print(deepsought)
     
     try:
         service = get_activity_service()
@@ -319,6 +321,48 @@ def handle_activity_query_via_mcp(message: str) -> Optional[str]:
                 return {'answer': err, 'response_type': 'activity'}
         
         return {'answer': handler_response, 'response_type': 'activity'}
+#         api = ActivityAPI()
+#         api_response = api.get_all_data('')
+#         if not api_response['success']:
+#             api_response = api.get_all_data('')
+#         records = api_response['data']['records']
+#         full_prompt = f"""You are Abegail, an AI assistant of a company. {context}
+# Activity Records: {records}
+# User Question: Based on the activity records, {message}
+
+# Be concise and straight to the point, but friendly.
+# Format name inputs as <surname, first name>
+
+# Answer:"""
+    
+#         env = os.environ.copy()
+#         env['OLLAMA_NUM_GPU'] = '1'
+        
+#         process = subprocess.Popen(
+#             ["ollama", "run", 'deepseek-r1:14b'],
+#             stdin=subprocess.PIPE,
+#             stdout=subprocess.PIPE,
+#             stderr=subprocess.PIPE,
+#             text=True,
+#             encoding="utf-8",
+#             errors="replace",
+#             env=env
+#         )
+
+#         stdout, stderr = process.communicate(input=full_prompt, timeout=60)
+        
+#         if process.returncode != 0:
+#             return "Sorry, there was an error."
+        
+#         return clean_response(stdout.strip()) if stdout.strip() else "No response generated."
+    
+#     except subprocess.TimeoutExpired:
+#         process.kill()
+#         return "⏱️ Request timeout."
+#     except FileNotFoundError:
+#         return "❌ Ollama not running."
+#     except Exception as e:
+#         return f"Error: {str(e)}"
     
     except Exception as e:
         return f"❌ **Activity Query Error:** {str(e)}\n\nPlease check if the MCP server is running."

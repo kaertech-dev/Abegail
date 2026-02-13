@@ -64,8 +64,12 @@ def chat():
         # Ensure session exists
         session_mgr.ensure_session_exists(session_id)
         
+        actual_message = message
+        if 'debug123' in message or 'debug456' in message:
+            actual_message = message[9:]
+        
         # Create and add user message
-        user_msg = session_mgr.create_message('user', message, session_id)
+        user_msg = session_mgr.create_message('user', actual_message, session_id)
         session_mgr.add_message(session_id, user_msg)
         
         # Check for quick responses first
@@ -74,18 +78,23 @@ def chat():
             bot_msg = session_mgr.create_message('bot', quick_resp, session_id, 
                                                  user_msg['id'], response_type='quick')
             session_mgr.add_message(session_id, bot_msg)
-            context_mgr.add_message(session_id, message, 'user')
+            context_mgr.add_message(session_id, actual_message, 'user')
             context_mgr.add_message(session_id, quick_resp, 'bot')
             learn_from_conversation(session_mgr.get_session(session_id))
             return jsonify(bot_msg)
         
         # Add to context
-        context_mgr.add_message(session_id, message, 'user')
+        context_mgr.add_message(session_id, actual_message, 'user')
         
         # Get context and knowledge
-        conversation_context = context_mgr.get_relevant_context(session_id, message, max_messages=5)
+        conversation_context = context_mgr.get_relevant_context(session_id, actual_message, max_messages=7)
         relevant_facts = kb.search_facts(message, limit=3)
         relevant_facts_text = [f['fact'] for f in relevant_facts]
+
+        # synchronous wrapper for unified mcp client
+        # wrapper handles routing logic
+        # unified client call appropriate server
+        # merge ai handler to sync wrapper
         
         # Extract database name
         database = extract_database_name(message) or DEFAULT_DATABASE
@@ -94,10 +103,11 @@ def chat():
         result = None
         
         # Priority 1: Activity Monitoring
-        result = handle_activity_query_via_mcp(message)
+        if 'debug123' not in message and 'debug456' not in message:
+            result = handle_activity_query_via_mcp(message, conversation_context)
         
         # Priority 2: Attendance
-        if not result:
+        if not result and 'debug123' not in message and 'debug456' not in message:
             result = handle_attendance_query_via_mcp(message)
         
         # Priority 3: Database queries
@@ -107,22 +117,23 @@ def chat():
         
         # Default: General AI response
         if not result:
-            result = {
-                'answer': ask_general_question(message, conversation_context, relevant_facts_text),
-                'response_type': 'general'
-            }
+            result = ask_general_question(message, conversation_context)
         
         # Create and add bot message
-        bot_msg = session_mgr.create_message('bot', result['answer'], session_id, 
-                                             user_msg['id'], response_type=result['response_type'])
+        csv_filename = result.get('csv_file')
+        bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], 
+                                            response_type=result['response_type'], csv = csv_filename)
         session_mgr.add_message(session_id, bot_msg)
-        
+
         # Update context and learning
-        context_mgr.add_message(session_id, result, 'bot')
-        learn_from_conversation(session_mgr.get_session(session_id))
+        if 'Request timeout' not in result['answer']:
+            if 'debug123' in message or 'debug456' in message:
+                message = message[9:]
+            context_mgr.add_message(session_id, result, 'bot')
+            learn_from_conversation(session_mgr.get_session(session_id))
         
-        # Store in knowledge base
-        _update_knowledge_base(kb, message, result['answer'], result['response_type'])
+            # Store in knowledge base
+            _update_knowledge_base(kb, message, result['answer'], result['response_type'])
         
         return jsonify(bot_msg)
         

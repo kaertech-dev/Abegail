@@ -1,7 +1,17 @@
 # ai_handler.py - Enhanced with GPU Optimization
 import subprocess
 import os
+import re
+import csv
+import spacy
 from typing import List, Optional, Dict
+from date_parser import extractDate
+from mcp_activity_server import ActivityAPI
+from mcp_attendance_server import AttendanceDB
+
+path_name = './csv_files/'
+filename = ''
+nlp = spacy.load("en_core_web_md")
 
 def _get_model_name():
     from config import MODEL_NAME
@@ -75,29 +85,91 @@ Answer:"""
     except Exception as e:
         return f"An error occurred: {str(e)}"
 
+def activity_handler(question: str):
+    # set date input for api endpoint
+    curr_date = extractDate(question)[0]
+    api_date = f'?start_date={curr_date}&end_date={curr_date}'
+
+    # retrieve records from api
+    activityService = ActivityAPI()
+    success = False
+    while not success:
+        api_response = activityService.get_all_data(api_date)
+        success = api_response['success']
+    records = api_response['data']['records']
+    
+    # prepare csv file for writing
+    global filename
+    filename = 'activity_' + curr_date + '.csv'
+    csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
+    writer = csv.DictWriter(csvfile, fieldnames=['Customer', 'Model', 'Station', 'Operator', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status'], extrasaction='ignore')
+    writer.writeheader()
+
+    # remove serial numbers and rename target to make it easier for Deepseek to parse
+    for r in records:
+        writer.writerow(r)
+        r['Target Cycle Time(s)'] = r.pop('Target(s)')
+        r.pop('serial_num')
+    
+    return f"Activity Records: {records} Refer to people by name but also give their employee number."
+
+def attendance_handler(question: str):
+    attendanceService = AttendanceDB()
+    processed = nlp(question)
+    # ner_tagging = [(ent.text, ent.label_) for ent in processed.ents]
+    emp_id = None
+    for ent in processed.ents:
+        if ent.label_ == 'PERSON':
+            emp_id = ent.text
+    
+    date_input = extractDate(question)[0]
+    records = attendanceService.get_records_by_date(date_input, emp_id)
+
+    # prepare csv file for writing
+    global filename
+    filename = 'attendance_' + date_input + '.csv'
+    csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
+    writer = csv.DictWriter(csvfile, fieldnames=['employee_name', 'employee_num', 'timestamp', 'location'], extrasaction='ignore')
+    writer.writeheader()
+    for r in records:
+        writer.writerow(r)
+    
+    return f"Attendance Records: {records} If asking for earliest or latest, give 10 entries and sort them by timestamp. Use both names and employee numbers. Ignore ID."
+
 def ask_general_question(question, context: Optional[str] = None, 
                         relevant_facts: Optional[List[str]] = None,
                         query_analysis: Optional[Dict] = None):
     """Enhanced general question handler with reasoning and GPU optimization"""
     MODEL_NAME = _get_model_name()
     
-    reasoning_context = _build_reasoning_context(question, query_analysis)
+    # reasoning_context = _build_reasoning_context(question, query_analysis)
     
-    context_section = f"\nConversation Context:\n{context}\n" if context else ""
-    facts_section = f"\nRelevant Facts:\n" + "\n".join(f"- {f}" for f in relevant_facts) + "\n" if relevant_facts else ""
-    
-    full_prompt = f"""You are Abegail, a helpful and intelligent AI assistant.
+    context_section = f"\nRecent conversations:\n{context}\n" if context else ""
+    # facts_section = f"\nRelevant Facts:\n" + "\n".join(f"- {f}" for f in relevant_facts) + "\n" if relevant_facts else ""
 
-{reasoning_context}
-{context_section}{facts_section}
+    if 'debug123' in question:
+        question = question.replace('debug123', '')
+        mcp_section = activity_handler(question)
+    
+    elif 'debug456' in question:
+        question = question.replace('debug456', '')
+        mcp_section = attendance_handler(question)
+    
+    else:
+        mcp_section = ''
+    
+    full_prompt = f"""You are Abegail, a helpful and reliable AI assistant for retrieving and summarizing company data.
+
+{context_section}
+{mcp_section}
 User Question: {question}
 
-INSTRUCTIONS:
-1. Understand what the user is really asking
-2. Provide a clear, direct answer
-3. Be conversational and friendly
-4. Use examples when helpful
-5. If you're not sure, say so honestly
+Instructions:
+1. Be concise and brief, but friendly.
+2. Provide specific details from the given data.
+3. If data is missing or unknown, say so honestly.
+4. Use markdown formatting for better readability. 
+5. If there's no mention of activity or attendance, be verbose and enthusiastic.
 
 Answer:"""
 
@@ -118,21 +190,27 @@ Answer:"""
         )
 
         # Shorter timeout for general questions
-        timeout = 30 if "1.5b" in MODEL_NAME else 45
+        timeout = 45 if "1.5b" in MODEL_NAME else 60
         stdout, stderr = process.communicate(input=full_prompt, timeout=timeout)
         
         if process.returncode != 0:
             return "Sorry, there was an error."
+
+        result = {
+                'answer': clean_response(stdout.strip()) if stdout.strip() else "No response generated.",
+                'csv_file': filename,
+                'response_type': 'general'
+            }
         
-        return clean_response(stdout.strip()) if stdout.strip() else "No response generated."
+        return result
 
     except subprocess.TimeoutExpired:
         process.kill()
-        return "⏱️ Request timeout."
+        return {'answer': "⏱️ Request timeout.", 'response_type': 'general'}
     except FileNotFoundError:
-        return "❌ Ollama not running."
+        return {'answer': "❌ Ollama not running.", 'response_type': 'general'}
     except Exception as e:
-        return f"Error: {str(e)}"
+        return {'answer': f"Error: {str(e)}", 'response_type': 'general'}
 
 def _build_reasoning_context(question: str, query_analysis: Optional[Dict]) -> str:
     """Build context to help AI understand the query better"""

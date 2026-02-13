@@ -78,8 +78,9 @@ class AttendanceDB:
                     )
                     ORDER BY `timestamp` ASC
                 """
-                search_pattern = f"% {employee_identifier}%"
-                cursor.execute(query, (target_date, search_pattern, search_pattern))
+                search_pattern1 = f"% {employee_identifier}%"
+                search_pattern2 = f"{employee_identifier}"
+                cursor.execute(query, (target_date, search_pattern1, search_pattern2))
             else:
                 query = "SELECT * FROM `raw` WHERE DATE(`timestamp`) = %s ORDER BY `timestamp` ASC"
                 cursor.execute(query, (target_date,))
@@ -108,7 +109,7 @@ class AttendanceDB:
                     )
                     ORDER BY `timestamp` ASC
                 """
-                search_pattern = f"% {employee_identifier}%"
+                search_pattern = f"%{employee_identifier}%"
                 cursor.execute(query, (start_date, end_date, search_pattern, search_pattern))
             else:
                 query = """
@@ -546,8 +547,20 @@ async def handle_check_presence(arguments: dict) -> list[TextContent]:
     if arguments.get("date"):
         target_date = parse_date_string(arguments["date"]) or date.today()
     
-    records = attendance_db.get_records_by_date(target_date, employee_id)
-    text = format_presence_summary(records, employee_id, target_date)
+    l_name = employee_id.split()
+    records = attendance_db.get_records_by_date(target_date, l_name[0])
+    final_record = []
+    if len(l_name) > 1:
+        for name_part in l_name[1:]:
+            temp = attendance_db.get_records_by_date(target_date, name_part)
+            for t in temp:
+                if t in records and t not in final_record:
+                    final_record.append(t)
+    
+    if not final_record:
+        final_record = records
+    
+    text = format_presence_summary(final_record, employee_id, target_date)
     
     return [TextContent(type="text", text=text)]
 

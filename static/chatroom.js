@@ -267,6 +267,9 @@ function copyMessage() {
 }
 
 async function downloadCSV(filename) {
+    // if (!selectedMessageId) return;
+    // const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
+    
     try{
         const base_path = "http://192.168.1.53:8080/api/download/" + filename;
         const url = URL.parse(base_path);
@@ -284,6 +287,8 @@ async function downloadCSV(filename) {
         console.error('Export error:', error);
         showNotification('Failed to download csv', 'error');
     }
+    
+    hideContextMenu();
 }
 
 function reactToMessage() {
@@ -398,9 +403,11 @@ function addMessage(message, isUser = false, metadata = {}) {
     if (metadata.regenerated) {
         badges += '<span class="badge regenerated">Regenerated</span>';
     }
-    if (metadata.response_type === 'company') {
+    if (metadata.response_type === 'activity') {
         badges += '<span class="badge company">Company Data</span>';
-    } else if (metadata.response_type === 'general') {
+    } else if (metadata.response_type === 'attendance') {
+        badges += '<span class="badge company">Company Data</span>';
+    }else if (metadata.response_type === 'general') {
         badges += '<span class="badge general">General</span>';
     }
     
@@ -424,6 +431,13 @@ function addMessage(message, isUser = false, metadata = {}) {
             </div>
         `;
     }
+    else if (metadata.csv) {
+        csvButton = `
+            <div class="csv-action">
+                <button type="button" class="download-csv" onclick="downloadCSV('${metadata.csv}')" title="download csv">Download csv file</button>
+            </div>
+        `;
+    }
     
     // Render markdown if available
     let messageContent = escapeHtml(message);
@@ -441,7 +455,7 @@ function addMessage(message, isUser = false, metadata = {}) {
             <div style="flex: 1;">
                 <div class="${bubbleClass}" data-original="${escapeHtml(message)}">
                     ${messageContent}
-                    ${editButton}
+
                     ${csvButton}
                 </div>
                 <div class="timestamp">${metadata.timestamp || getCurrentTime()} ${badges}</div>

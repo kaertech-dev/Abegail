@@ -29,30 +29,34 @@ from mcp.types import (
 
 path_name = './csv_files/'
 
+def std_name(records: list) -> list:
+    for rec in records:
+        l_name = rec['Operator'].split(',')
+        if len(l_name) > 1:
+            rec['Operator'] = l_name[1].strip() + ' ' + l_name[0]
+        else:
+            pass
+    
+    return records
+
 def format_entry(entry: dict, filter: str) -> str:
     if filter == 'all':
-        text = f"**{entry['station']}** {entry['model']} ({entry['customer']}) \n\n"
-        text += f"   -  **Start Time:** {entry['start_time']} **End Time:** {entry['end_time']}\n\n"
-        text += f"   -  **Cycle Time:** {entry['cycle_time(s)']} **Output:** {entry['output']}\n\n"
-        text += f"   -  **Target:** {entry['target(s)']} **Status:** {entry['status']}\n\n"
+        text = f"**{entry['Station']}** - {entry['Model']} ({entry['Customer']}) \n\n"
+        text += f"   -  **Start Time:** {entry['Start Time']}   **End Time:** {entry['End time']}\n\n"
+        text += f"   -  **Cycle Time:** {entry['Cycle Time(s)']}   **Output:** {entry['Output']}\n\n"
+        text += f"   -  **Target:** {entry['Target(s)']}   **Status:** {entry['Status']}\n\n"
 
     elif filter == 'where':
-        text = f"**{entry['station']}** {entry['model']} ({entry['customer']}) \n\n"
-        text += f"   -  *Start Time* - {entry['start_time']} *End Time* - {entry['end_time']}\n\n"
+        text = f"**{entry['Station']}** - {entry['Model']} ({entry['Customer']}) \n\n"
+        text += f"   -  *Start Time* - {entry['Start Time']}   *End Time* - {entry['End time']}\n\n"
     
     elif filter == 'cycle time' or filter == 'target':
-        key = filter.replace(' ', '_') + '(s)'
-        text = f"**{entry['station']}** {entry['model']} ({entry['customer']}) \n\n"
-        text += f"   -  *{filter.title()}* - {entry[key]} \n\n"
-    
-    elif filter == 'status':
-        val = get_status(entry['cycle_time(s)'], entry['target(s)'])
-        text = f"**{entry['station']}** {entry['model']} ({entry['customer']}) \n\n"
-        text += f"   -  *{filter.title()}* - {val} \n\n"
+        text = f"**{entry['Station']}** - {entry['Model']} ({entry['Customer']}) \n\n"
+        text += f"   -  *Cycle Time* - {entry['Cycle Time(s)']}   *Target* - {entry['Target(s)']} \n\n"
     
     else:
-        key = filter.replace(' ', '_') if filter == 'end time' else filter
-        text = f"**{entry['station']}** {entry['model']} ({entry['customer']}) \n\n"
+        key = filter.capitalize() if filter == 'end time' else filter.title()
+        text = f"**{entry['Station']}** - {entry['Model']} ({entry['Customer']}) \n\n"
         text += f"   -  *{filter.title()}* - {entry[key]} \n\n"
     
     return text
@@ -68,13 +72,12 @@ class ActivityAPI:
             
             self.activity_endpoint = api_url
     
-    def get_all_data(self, api_url: Optional[str] = None, timeout: int = 10) -> Dict:
+    def get_all_data(self, date_suffix: str, timeout: int = 10) -> Dict:
         """
         Fetch activity data from API
         Returns: Dict with activity data or error info
         """
-        if not api_url:
-            api_url = self.activity_endpoint
+        api_url = self.activity_endpoint + date_suffix
         try:
             response = requests.get(
                 api_url, 
@@ -292,45 +295,43 @@ async def handle_fetch_all(arguments: dict) -> list[TextContent]:
     station = arguments.get('station')
 
     # prepare csv file for writing
-    filename = 'activity_summary_' + date.today().isoformat() + '.csv'
+    filename = 'activity_summary_' + start_date + '.csv'
     csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
-    writer = csv.DictWriter(csvfile, fieldnames=['customer', 'model', 'station', 'operator', 'output', 'cycle_time(s)', 'target(s)', 'start_time', 'end_time', 'status'], extrasaction='ignore')
+    writer = csv.DictWriter(csvfile, fieldnames=['Customer', 'Model', 'Station', 'Operator', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status'], extrasaction='ignore')
     writer.writeheader()
 
     text = ''
-    base_url = 'http://localhost/activity'
     if end_date:
-        api = base_url + f'?start_date={start_date}&end_date={end_date}'
+        api_date = f'?start_date={start_date}&end_date={end_date}'
         text = filename + f"# Activity Summary from {start_date} to {end_date}\n\n"
     else:
-        api = base_url + f'?date={start_date}'
+        api_date = f'?start_date={start_date}&end_date={start_date}'
         text = filename + f"# Activity Summary for {start_date}\n\n"
 
-    result = activityServer.get_all_data(api)
-    if not result['success']:
-        result = activityServer.get_all_data(api)
+    success = False
+    while not success:
+        result = activityServer.get_all_data(api_date)
+        success = result['success']
 
     if not result.get('data'):
         return [TextContent(type="text", text="## No records found.")]
-    records = result['data']
+    records = std_name(result['data']['records'])
     # text = str(records)
     # return [TextContent(type="text", text=text)]
 
     if customer:
-        filtered = [r for r in records if r['customer'].upper()==customer.upper()]
+        filtered = [r for r in records if r['Customer'].upper()==customer.upper()]
         records = filtered
 
     if model:
-        filtered = [r for r in records if r['model'].upper()==model.upper()]
+        filtered = [r for r in records if r['Model'].upper()==model.upper()]
         records = filtered
     
     if station:
-        filtered = [r for r in records if r['station'].upper()==station.upper()]
+        filtered = [r for r in records if r['Station'].upper()==station.upper()]
         records = filtered
-        # text = str(records)
-        # return [TextContent(type="text", text=text)]
     
-    model_list = {r['model'] for r in records}
+    model_list = {r['Model'] for r in records}
     if len(records) == 0:
         return [TextContent(type="text", text="## No records found.")]
     
@@ -341,28 +342,26 @@ async def handle_fetch_all(arguments: dict) -> list[TextContent]:
         text += f"## {curr_model}\n\n"
         ctr = 1
         for e in records:
-            status = get_status(e['cycle_time(s)'], e['target(s)'])
-            if e['model'] == curr_model:
-                text += f"{ctr}. **{e['operator']}** ({e['station']})\n\n"
-                text += f"   -  **Start Time:** {e['start_time']} **End Time:** {e['end_time']}\n\n"
-                text += f"   -  **Cycle Time:** {e['cycle_time(s)']}s **Output:** {e['output']}\n\n"
-                text += f"   -  **Target:**  {e['target(s)']}s **Status:** {status}\n\n"
+            if e['Model'] == curr_model:
+                text += f"{ctr}. **{e['Operator']}** ({e['operator_code']}) - {e['Station']}\n\n"
+                text += f"   -  **Start Time:** {e['Start Time']}   **End Time:** {e['End time']}\n\n"
+                text += f"   -  **Cycle Time:** {e['Cycle Time(s)']}s   **Output:** {e['Output']}\n\n"
+                text += f"   -  **Target:**  {e['Target(s)']}s   **Status:** {e['Status']}\n\n"
                 ctr += 1
-                e['status'] = status
                 writer.writerow(e)
     
     return [TextContent(type="text", text=text)]
 
-def get_status(cycle_time: str, target: str) -> str:
-    if cycle_time == '-':
-        return 'ON TARGET'
+# def get_status(cycle_time: str, target: str) -> str:
+#     if cycle_time == '-':
+#         return 'ON TARGET'
     
-    if float(cycle_time) <= float(target):
-        return 'ON TARGET'
-    elif float(cycle_time) < float(target)*1.1:
-        return 'ORANGE TARGET'
-    else:
-        return 'BELOW TARGET'
+#     if float(cycle_time) <= float(target):
+#         return 'ON TARGET'
+#     elif float(cycle_time) < float(target)*1.1:
+#         return 'ORANGE TARGET'
+#     else:
+#         return 'BELOW TARGET'
 
 async def handle_operator_data(arguments: dict) -> list[TextContent]:
     start_date = arguments.get('date')
@@ -373,47 +372,40 @@ async def handle_operator_data(arguments: dict) -> list[TextContent]:
     model = arguments.get('model', '')
     station = arguments.get('station', '')
 
-    base_url = 'http://localhost/activity'
     if end_date:
-        base_url += f'?start_date={start_date}&end_date={end_date}'
-        text = f"# Activity Summary from {start_date} to {end_date}\n\n"
+        api_date = f'?start_date={start_date}&end_date={end_date}'
     else:
-        base_url += f'?date={start_date}'
-        text = f"# Activity Summary for {start_date}\n\n"
+        api_date = f'?start_date={start_date}&end_date={start_date}'
 
-    # if customer or model or station:
-    #     url_suffix = f"&customer={customer.lower()}&model={model.lower()}&station={station.lower()}&active_filter=all"
-    #     base_url += url_suffix
-
-    result = activityServer.get_all_data(base_url)
-    if not result['success']:
-        result = activityServer.get_all_data(base_url)
+    success = False
+    while not success:
+        result = activityServer.get_all_data(api_date)
+        success = result['success']
     
-    # records = result['data']['records']
-    records = result['data']
+    records = std_name(result['data']['records'])
 
     # filter the records by employee name/number
     emp_records = []
     for r in records:
-        if emp_id in r['operator'].lower():
+        if emp_id.lower() in r['Operator'].lower() or emp_id == r['operator_code']:
             emp_records.append(r)
-    records = emp_records
     
     if len(emp_records) == 0:
         err_text = f"## No matches for {emp_id.title()} in the Monitoring System.\n\n"
         return [TextContent(type="text", text=err_text)]
+    records = emp_records
     
     # filter the employee records if there was an input customer, model, or station
     if customer:
-        filtered = [r for r in records if r['customer'].upper()==customer.upper()]
+        filtered = [r for r in records if r['Customer'].upper()==customer.upper()]
         records = filtered
 
     if model:
-        filtered = [r for r in records if r['model'].upper()==model.upper()]
+        filtered = [r for r in records if r['Model'].upper()==model.upper()]
         records = filtered
     
     if station:
-        filtered = [r for r in records if r['station'].upper()==station.upper()]
+        filtered = [r for r in records if r['Station'].upper()==station.upper()]
         records = filtered
     
     if len(records) == 0:
@@ -423,9 +415,9 @@ async def handle_operator_data(arguments: dict) -> list[TextContent]:
     # set header text
     text = f"# Activity Summary for {emp_id.title()}\n\n"
     if end_date:
-        text += f"Date: {start_date} to {end_date}\n\n"
+        text += f"**Date:** {start_date} to {end_date}\n\n"
     else:
-        text += f"Date: {start_date}\n\n"
+        text += f"**Date:** {start_date}\n\n"
     
     if stats == 'where':
         if start_date == date.today().isoformat():
@@ -435,7 +427,7 @@ async def handle_operator_data(arguments: dict) -> list[TextContent]:
 
     for i, entry in enumerate(records, 1):
         if i == 1 and stats != 'where':
-            text += f"Operator: {entry['operator']}\n\n"
+            text += f"**Operator:** {entry['Operator']} ({entry['operator_code']})\n\n"
         text += f"{i}. "
         text += format_entry(entry, stats)
 
@@ -444,46 +436,39 @@ async def handle_operator_data(arguments: dict) -> list[TextContent]:
 async def handle_aggregate_data(arguments: dict) -> list[TextContent]:
     start_date = arguments.get('date')
     end_date = arguments.get('end_date')
-    stats = arguments.get('stats')
+    stats = arguments.get('stats', '')
     customer = arguments.get('customer', '')
     model = arguments.get('model', '')
     station = arguments.get('station', '')
-
-    if stats == 'cycle time' or stats == 'target':
-        key = stats.replace(' ', '_') + '(s)'
-    elif stats == 'end time':
-        key = stats.replace(' ', '_')
-    else:
-        key = stats
     
-    base_url = 'http://localhost/activity'
     if end_date:
-        base_url += f'?start_date={start_date}&end_date={end_date}'
+        api_date = f'?start_date={start_date}&end_date={end_date}'
     else:
-        base_url += f'?date={start_date}'
+        api_date = f'?start_date={start_date}&end_date={start_date}'
+
+    success = False
+    while not success:
+        result = activityServer.get_all_data(api_date)
+        success = result['success']
     
-    result = activityServer.get_all_data(base_url)
-    if not result['success']:
-        result = activityServer.get_all_data(base_url)
-    
-    records = result['data']
+    records = std_name(result['data']['records'])
 
     if customer:
-        filtered = [r for r in records if r['customer'].upper()==customer.upper()]
+        filtered = [r for r in records if r['Customer'].upper()==customer.upper()]
         records = filtered
 
     if model:
-        filtered = [r for r in records if r['model'].upper()==model.upper()]
+        filtered = [r for r in records if r['Model'].upper()==model.upper()]
         records = filtered
     
     if station:
-        filtered = [r for r in records if r['station'].upper()==station.upper()]
+        filtered = [r for r in records if r['Station'].upper()==station.upper()]
         records = filtered
         # text = str(records)
         # return [TextContent(type="text", text=text)]
     
-    model_list = {r['model'].upper() for r in records}
-    station_list = {r['station'].upper() for r in records if r['model'].upper()==model.upper()}
+    model_list = {r['Model'].upper() for r in records}
+    station_list = {r['Station'].upper() for r in records if r['Model'].upper()==model.upper()}
 
     if model and model.upper() not in model_list:
         # return [TextContent(type="text", text='## No such model in Activity Monitoring.\n\n')]
@@ -506,21 +491,24 @@ async def handle_aggregate_data(arguments: dict) -> list[TextContent]:
         text += f" on {model.upper()}"
     text += "\n\n"
     if end_date:
-        text += f"Date: {start_date} to {end_date} "
+        text += f"**Date:** {start_date} to {end_date} "
     else:
-        text += f"Date: {start_date} "
-    text += f"Count: {len(records)}\n\n"
+        text += f"**Date:** {start_date} "
+    text += f"**Count:** {len(records)}\n\n"
+
+    if stats == 'cycle time' or stats == 'target':
+        key = stats.title() + '(s)'
+    elif stats == 'end time':
+        key = stats.capitalize()
+    else:
+        key = stats.title()
 
     for i, rec in enumerate(records, 1):
-        status_txt = get_status(rec['cycle_time(s)'], rec['target(s)'])
         if stats == 'list_ops':
-            text += f"{i}.  **{rec['operator']}** - {rec['model']}\n\n"
-            text += f"   -  {rec['station']} - **Output:** {rec['output']} **Status:** {status_txt}\n\n"
-        elif stats == 'status':
-            text += f"{i}.  **{rec['operator']}** - {rec['station']}\n\n"
-            text += f"   -  **Status:** {status_txt} \n\n"
+            text += f"{i}.  **{rec['Operator']}** ({rec['operator_code']}) - {rec['Model']}\n\n"
+            text += f"   -  {rec['Station']} - **Output:** {rec['Output']} **Status:** {rec['Status']}\n\n"
         else:
-            text += f"{i}.  **{rec['operator']}** - {rec['station']}\n\n"
+            text += f"{i}.  **{rec['Operator']}** ({rec['operator_code']}) - {rec['Station']}\n\n"
             text += f"   -  **{stats.title()}:** {rec[key]} \n\n"
 
     return [TextContent(type="text", text=text)]

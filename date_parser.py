@@ -101,6 +101,9 @@ def extractDate(message: str) -> List[date]:
         date_list[0] = [date_list[0][0], range_match[0][0], date_list[0][2]]
         date_list[1] = [date_list[0][0], range_match[0][3], date_list[0][2]]
     
-    iso_list = validate(date_list)
-    # print(iso_list)
-    return iso_list
+    if date_list:
+        iso_list = validate(date_list)
+        # print(iso_list)
+        return iso_list
+    else:
+        return [date.today().isoformat()]

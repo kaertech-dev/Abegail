@@ -298,6 +298,14 @@ def get_attendance_service(server_script_path: str = "c:/Users/ai/OneDrive/Docum
         _attendance_service = AttendanceService(server_script_path)
     return _attendance_service
 
+def get_name(raw_name: str) -> str:
+    l_name = raw_name.split(',')
+    if len(l_name) > 1:
+        new_name = l_name[1] + ' ' + l_name[0]
+        return new_name.strip()
+    else:
+        return raw_name.strip()
+
 # Query router to detect attendance queries
 def detect_attendance_query(message: str) -> Optional[Dict]:
     """
@@ -333,20 +341,20 @@ def detect_attendance_query(message: str) -> Optional[Dict]:
     
     # 1. Presence check: "is [name] present"
     presence_patterns = [
-        r'is\s+(\w+)\s+present',
-        r'is\s+(\w+)\s+here',
+        r'is\s+([A-Za-z,\s]+)\s+present',
+        r'is\s+([A-Za-z,\s]+)\s+here',
         r'is\s+(KE\d{4})\s+present',
-        r'check\s+(\w+)\s+attendance',
+        r'check\s+([A-Za-z,\s]+)\s+attendance',
         # r'what\s+time\s*',
-        r'(\w+)\s*time\s*out\s*\w*',
-        r'(\w+) clock out'
+        r'([A-Za-z,\s]+)\s*time\s*out\s*\w*',
+        r'([A-Za-z,\s]+) clock out'
     ]
     
     for pattern in presence_patterns:
-        match = re.search(pattern, msg_lower, re.IGNORECASE)
+        match = re.search(pattern, message, re.IGNORECASE)
         if match:
             query_info['type'] = 'presence_check'
-            query_info['params']['employee_identifier'] = match.group(1)
+            query_info['params']['employee_identifier'] = get_name(match.group(1))
             break
     
     # 2. Operator count: "how many operators"
@@ -386,15 +394,11 @@ def detect_attendance_query(message: str) -> Optional[Dict]:
         query_info['type'] = 'general_attendance'
     
     # Extract date information
-    today = datetime.now().date()
     date_results = extractDate(msg_lower)
-    if len(date_results) == 0:
-        # no explicit date was given, assume today
-        query_info['params']['date'] = today.isoformat()
-    elif len(date_results) == 1:
-        # only one date was given
+    if len(date_results) == 1:
+        # only one date was given, explicitly or implicitly
         query_info['params']['date'] = date_results[0]
-    else:
+    elif len(date_results) > 1:
         # two dates were given, i.e. a range
         query_info['params']['start_date'] = date_results[0]
         query_info['params']['end_date'] = date_results[1]
