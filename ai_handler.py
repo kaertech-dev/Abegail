@@ -4,14 +4,24 @@ import os
 import re
 import csv
 import spacy
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from date_parser import extractDate
 from mcp_activity_server import ActivityAPI
-from mcp_attendance_server import AttendanceDB
+from mcp_attendance_client import get_attendance_service
+# from mcp_attendance_server import AttendanceDB
+
+DEFAULT_MODEL = 'deepseek-r1:14b'
 
 path_name = './csv_files/'
 filename = ''
 nlp = spacy.load("en_core_web_md")
+
+departments = ['Top Management',
+            'Manufacturing', 'Quality Regulatory Affairs & EHS',
+            'Business Development', 'HR & Admin',
+            'Supply Chain Management', 'Facilities & Maintenance',
+            'Information Technology', 'Research & Development',
+            'Accounting', 'Finance & Administration']
 
 def _get_model_name():
     from config import MODEL_NAME
@@ -85,6 +95,76 @@ Answer:"""
     except Exception as e:
         return f"An error occurred: {str(e)}"
 
+def handler_deepseek(prompt: str, model_name: str = DEFAULT_MODEL):
+    # MODEL_NAME = _get_model_name()
+    try:
+        # GPU optimization: ensure GPU is used
+        env = os.environ.copy()
+        env['OLLAMA_NUM_GPU'] = '1'
+        
+        process = subprocess.Popen(
+            ["ollama", "run", model_name],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env
+        )
+
+        # Shorter timeout for general questions
+        timeout = 45 if "1.5b" in model_name else 60
+        stdout, stderr = process.communicate(input=prompt, timeout=timeout)
+        
+        if process.returncode != 0:
+            return "Sorry, there was an error."
+
+        return clean_response(stdout.strip()) if stdout.strip() else "No response generated."
+
+    except subprocess.TimeoutExpired:
+        process.kill()
+        return "⏱️ Request timeout."
+    except FileNotFoundError:
+        return "❌ Ollama not running."
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def query_processor(message: str):
+    query_type = None
+    
+    activity_keywords = [
+        'activity', 'activities', 'monitoring', 'where is',
+        'what are they doing', 'who is doing', 'doing', 'working',
+        'productivity', 'output', 'cycle time', 'target', 'start time', 'end time',
+        'station', 'customer', 'model', 'operator'
+    ]
+
+    for kw in activity_keywords:
+        if kw in message.lower():
+            return 'activity'
+
+    attendance_keywords = [
+        'attendance', 'present', 'absent', 'time in', 'clock in', 'check in', 
+        'who is here', 'who is in', 
+        'department', 'headcount', 'employee', 'employees',
+        'timeout', 'time out', 'clock out'
+    ]
+
+    for kw in attendance_keywords:
+        if kw in message.lower():
+            return 'attendance'
+    
+    if query_type is None:
+        return 'general'
+
+def query_processor_LLM(question: str):
+    ai_input = f"User Question: '{question}' \n\n"
+    more_prompt = r"List of tools: {'check_presence', 'department_headcount', 'get_latest_entries'}. Choose the best tool to use and output its name enclosed in curly braces. Otherwise, output 'not_attendance' instead."
+    ai_response = handler_deepseek(ai_input+more_prompt, 'deepseek-r1:7b')
+    print(ai_response)
+    return ai_response
+
 def activity_handler(question: str):
     # set date input for api endpoint
     curr_date = extractDate(question)[0]
@@ -94,6 +174,7 @@ def activity_handler(question: str):
     activityService = ActivityAPI()
     success = False
     while not success:
+        # replace this api call with server tool call
         api_response = activityService.get_all_data(api_date)
         success = api_response['success']
     records = api_response['data']['records']
@@ -111,32 +192,71 @@ def activity_handler(question: str):
         r['Target Cycle Time(s)'] = r.pop('Target(s)')
         r.pop('serial_num')
     
-    return f"Activity Records: {records} Refer to people by name but also give their employee number."
+    return f"Activity Records: {records} Refer to people by name but also give their employee number. Above target is good."
 
-def attendance_handler(question: str):
-    attendanceService = AttendanceDB()
+def attendance_handler(question: str, tool_call: str) -> dict[str, Any]:
+    global filename
+    result = ''
+    attendanceService = get_attendance_service()
+    date_input = extractDate(question)
+
     processed = nlp(question)
-    # ner_tagging = [(ent.text, ent.label_) for ent in processed.ents]
-    emp_id = None
-    for ent in processed.ents:
-        if ent.label_ == 'PERSON':
-            emp_id = ent.text
+    entities = [ent.text for ent in processed.ents if ent.label_ == 'PERSON']
+    if entities:
+        emp_id = entities[0]
+    elif emp_num := re.search(r'\s+(KE\d+)\s*', question, re.IGNORECASE):
+        emp_id = emp_num.group(1)
+    else:
+        emp_id = None
     
-    date_input = extractDate(question)[0]
-    records = attendanceService.get_records_by_date(date_input, emp_id)
+    addtl_prompts = ''
+
+    # match tool_call:
+        # case 'check_presence':
+        #     processed = nlp(question)
+        #     entities = [ent.text for ent in processed.ents if ent.label_ == 'PERSON']
+        #     records = attendanceService.get_records_by_date(date_input, entities[0])
+        #     fieldnames = ['employee_name', 'employee_num', 'timestamp', 'location']
+    if len(date_input) > 1:
+        result = attendanceService.get_attendance_range(date_input[0], date_input[1], emp_id)
+
+    elif 'get_latest_entries' in tool_call:
+        result = attendanceService.get_latest_entries()
+        # filename = 'latest_attendance_' + date_input + '.csv'
+        # fieldnames = ['employee_name', 'employee_num', 'timestamp', 'location']
+        # addtl_prompts = 'Only list the first 10 entries and sort them by timestamp.'
+            
+    elif 'department_headcount' in tool_call:
+        dept_param = [dept.lower() for dept in departments if dept.lower() in question.lower()]
+        result = attendanceService.department_headcount(dept_param[0], date_input[0])
+        # filename = str(dept_param[0]) + '_' + date_input + '.csv'
+        # fieldnames = ['employee_name', 'employee_num', 'timestamp', 'department']
+        # addtl_prompts = 'Only list the first 20 entries and sort the names alphabetically.'
+    
+    elif 'check_presence' in tool_call or 'check_attendance' in tool_call:
+        result = attendanceService.check_attendance(date_input[0], emp_id)
+        # filename = 'attendance_' + date_input + '.csv'
+        # fieldnames = ['employee_name', 'employee_num', 'timestamp', 'location']
+
+    idx = result.find('.csv') + 4
+    if idx > 3:
+        filename = result[:idx]
+        return {'answer': result[idx:], 'csv_file': filename, 'response_type': 'attendance'}
+    else:
+        return {'answer': result, 'response_type': 'attendance'}
+
+    # print(addtl_prompts)
 
     # prepare csv file for writing
-    global filename
-    filename = 'attendance_' + date_input + '.csv'
-    csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
-    writer = csv.DictWriter(csvfile, fieldnames=['employee_name', 'employee_num', 'timestamp', 'location'], extrasaction='ignore')
-    writer.writeheader()
-    for r in records:
-        writer.writerow(r)
+    # csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
+    # writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction='ignore')
+    # writer.writeheader()
+    # for r in records:
+    #     writer.writerow(r)
     
-    return f"Attendance Records: {records} If asking for earliest or latest, give 10 entries and sort them by timestamp. Use both names and employee numbers. Ignore ID."
+    # return f"Attendance Records: {records} Use both names and employee numbers. Ignore ID. " + addtl_prompts
 
-def ask_general_question(question, context: Optional[str] = None, 
+def ask_general_question(question: str, context: Optional[str] = None, 
                         relevant_facts: Optional[List[str]] = None,
                         query_analysis: Optional[Dict] = None):
     """Enhanced general question handler with reasoning and GPU optimization"""
@@ -147,70 +267,32 @@ def ask_general_question(question, context: Optional[str] = None,
     context_section = f"\nRecent conversations:\n{context}\n" if context else ""
     # facts_section = f"\nRelevant Facts:\n" + "\n".join(f"- {f}" for f in relevant_facts) + "\n" if relevant_facts else ""
 
-    if 'debug123' in question:
-        question = question.replace('debug123', '')
+    query_type = query_processor(question)
+    if query_type == 'attendance':
+        ai_response = query_processor_LLM(question)
+        return attendance_handler(question, ai_response)
+    elif query_type == 'activity':
         mcp_section = activity_handler(question)
-    
-    elif 'debug456' in question:
-        question = question.replace('debug456', '')
-        mcp_section = attendance_handler(question)
-    
     else:
-        mcp_section = ''
+        mcp_section = 'Not available'
     
-    full_prompt = f"""You are Abegail, a helpful and reliable AI assistant for retrieving and summarizing company data.
+    full_prompt = f"""You are Abegail, a reliable AI assistant that can interface with databases for attendance and manufacturing activity.
 
 {context_section}
-{mcp_section}
+Records: {mcp_section}
 User Question: {question}
 
 Instructions:
-1. Be concise and brief, but friendly.
-2. Provide specific details from the given data.
-3. If data is missing or unknown, say so honestly.
-4. Use markdown formatting for better readability. 
-5. If there's no mention of activity or attendance, be verbose and enthusiastic.
+1. Be informative, concise, and friendly.
+2. Use markdown formatting for better readability.
+3. Provide specific examples from the given data.
+4. If YES/NO question, answer with YES or NO first before giving details.
 
 Answer:"""
 
-    try:
-        # GPU optimization: ensure GPU is used
-        env = os.environ.copy()
-        env['OLLAMA_NUM_GPU'] = '1'
-        
-        process = subprocess.Popen(
-            ["ollama", "run", MODEL_NAME],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env
-        )
+    result = handler_deepseek(full_prompt)
 
-        # Shorter timeout for general questions
-        timeout = 45 if "1.5b" in MODEL_NAME else 60
-        stdout, stderr = process.communicate(input=full_prompt, timeout=timeout)
-        
-        if process.returncode != 0:
-            return "Sorry, there was an error."
-
-        result = {
-                'answer': clean_response(stdout.strip()) if stdout.strip() else "No response generated.",
-                'csv_file': filename,
-                'response_type': 'general'
-            }
-        
-        return result
-
-    except subprocess.TimeoutExpired:
-        process.kill()
-        return {'answer': "⏱️ Request timeout.", 'response_type': 'general'}
-    except FileNotFoundError:
-        return {'answer': "❌ Ollama not running.", 'response_type': 'general'}
-    except Exception as e:
-        return {'answer': f"Error: {str(e)}", 'response_type': 'general'}
+    return {'answer': result, 'csv_file': filename, 'response_type': 'general'}
 
 def _build_reasoning_context(question: str, query_analysis: Optional[Dict]) -> str:
     """Build context to help AI understand the query better"""

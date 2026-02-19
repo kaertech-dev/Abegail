@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <title>Chart.js Example</title>
+</head>
+<body>
+    <div style="height: 50vh; width: 80%;">
+        <canvas id="myChart"></canvas>
+    </div>
+
+    <!-- Store Flask data as a JavaScript variable -->
+    <script>
+        const labels = JSON.parse('{{ labels | tojson | safe }}');
+        const chartData = JSON.parse('{{ data | tojson | safe }}');
+        const chartName = JSON.parse('{{ name | tojson | safe }}');
+
+        const data = {
+            labels: labels,
+            datasets: [{
+                label: chartName,
+                fill: false,
+                backgroundColor: 'rgb(58, 124, 27, 0.8)',
+                borderColor: 'rgb(58, 124, 27)',
+                borderWidth: 1,
+                axis: 'y',
+                data: chartData, 
+            }],
+        };
+
+        const config = {
+            type: 'bar',
+            data: data,
+            options: { 
+                maintainAspectRatio: false,
+                grouped: false,
+                indexAxis: 'y',
+                scales: {
+                    y: {
+                        title: {text: 'Date', display: true},
+                    },
+                    x: {
+                        title: {text: 'Timestamp', display: true}, 
+                        reverse: false, min: 0, max: 24,
+                        ticks: {maxTicksLimit: 25},
+                        grid: {
+                            color: function(context) {
+                                if (context.tick.value == 7 || context.tick.value == 16) {
+                                    return 'rgb(190, 40, 40)';
+                                }
+                                return 'rgb(40, 40, 40, 0.5)';
+                            },
+                            lineWidth: function(context) {
+                                if (context.tick.value == 7 || context.tick.value == 16) {
+                                    return 1.5;
+                                }
+                                return 1;
+                            },
+                        },
+                    }, 
+                },
+            }
+        };
+
+        const myChart = new Chart(
+            document.getElementById('myChart'),
+            config
+        );
+    </script>
+</body>
+</html>

@@ -658,6 +658,9 @@ async def handle_dept_headcount(arguments: dict) -> list[TextContent]:
     all_employees = attendance_db.get_all_employees(dept_input)
     present_employees = attendance_db.get_present_employees(target_date, start_time, dept_input)
 
+    if len(all_employees) == 0:
+        return [TextContent(type="text", text='No active employees found under that department')]
+
     # prepare a csv file while formatting the output string
     filename = dept_input.replace(" ", "_") + '_' + target_date.isoformat() + '.csv'
     csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')

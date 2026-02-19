@@ -1,8 +1,5 @@
 import asyncio
-import json
 import re
-import os
-import subprocess
 from datetime import date, timedelta
 from typing import Dict, Optional, List
 from contextlib import asynccontextmanager
@@ -20,11 +17,11 @@ class CMSobject:
         self.customer = customer
         self.model = model
         self.station = station
-        self.list = [customer, station, model]
+        
     def get_list(self):
         return [self.customer, self.station, self.model]
 
-class ActivityMCPClient:
+class ActivityMCPClient():
     """Client to interact with Activity MCP Server"""
     
     def __init__(self, server_script_path: str = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/mcp_activity_server.py"):
@@ -289,7 +286,7 @@ def detect_activity_query(message: str) -> Optional[Dict]:
     
     return query_info if query_info['type'] else None
 
-def handle_activity_query_via_mcp(message: str, context: str) -> Optional[str]:
+def handle_activity_query_via_mcp(message: str) -> Optional[str]:
     """
     Handle activity query through MCP server
     
@@ -299,6 +296,7 @@ def handle_activity_query_via_mcp(message: str, context: str) -> Optional[str]:
     Returns:
         Response string, or None if not an activity query
     """
+    message = message.replace("debug123", "")
     query_info = detect_activity_query(message)
     
     if not query_info:
@@ -320,49 +318,12 @@ def handle_activity_query_via_mcp(message: str, context: str) -> Optional[str]:
                 err = 'Cannot parse the input. Please refine your query or be more specific.'
                 return {'answer': err, 'response_type': 'activity'}
         
-        return {'answer': handler_response, 'response_type': 'activity'}
-#         api = ActivityAPI()
-#         api_response = api.get_all_data('')
-#         if not api_response['success']:
-#             api_response = api.get_all_data('')
-#         records = api_response['data']['records']
-#         full_prompt = f"""You are Abegail, an AI assistant of a company. {context}
-# Activity Records: {records}
-# User Question: Based on the activity records, {message}
-
-# Be concise and straight to the point, but friendly.
-# Format name inputs as <surname, first name>
-
-# Answer:"""
-    
-#         env = os.environ.copy()
-#         env['OLLAMA_NUM_GPU'] = '1'
-        
-#         process = subprocess.Popen(
-#             ["ollama", "run", 'deepseek-r1:14b'],
-#             stdin=subprocess.PIPE,
-#             stdout=subprocess.PIPE,
-#             stderr=subprocess.PIPE,
-#             text=True,
-#             encoding="utf-8",
-#             errors="replace",
-#             env=env
-#         )
-
-#         stdout, stderr = process.communicate(input=full_prompt, timeout=60)
-        
-#         if process.returncode != 0:
-#             return "Sorry, there was an error."
-        
-#         return clean_response(stdout.strip()) if stdout.strip() else "No response generated."
-    
-#     except subprocess.TimeoutExpired:
-#         process.kill()
-#         return "⏱️ Request timeout."
-#     except FileNotFoundError:
-#         return "❌ Ollama not running."
-#     except Exception as e:
-#         return f"Error: {str(e)}"
+        idx = handler_response.find('.csv') + 4
+        if idx > 3:
+            filename = handler_response[:idx]
+            return {'answer': handler_response[idx:], 'csv_file': filename, 'response_type': 'activity'}
+        else:
+            return {'answer': handler_response, 'response_type': 'activity'}
     
     except Exception as e:
         return f"❌ **Activity Query Error:** {str(e)}\n\nPlease check if the MCP server is running."

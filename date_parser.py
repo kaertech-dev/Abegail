@@ -10,14 +10,26 @@ month_names = ["january", "february", "march", "april", "may", "june",
 def keyword_check(message: str) -> List[str]:
     date_list = []
     today = date.today()
+    day_of_week = date.today().weekday() + 1 #days from closest Sunday
+
+    week_match = re.search(r'last\s+(\d*)\s*weeks?', message, re.IGNORECASE)
+    if week_match:
+        num_weeks = int(week_match.group(1)) if week_match.group(1) else 1
+        end_date = today - timedelta(days=day_of_week)
+        start_date = end_date - timedelta(days=(num_weeks*7)-1)
+
+        date_list.append(start_date.isoformat())
+        date_list.append(end_date.isoformat())
+        return date_list
+
     if 'today' in message:
         date_list.append(today.isoformat())
     elif 'yesterday' in message:
         date_list.append((today - timedelta(days=1)).isoformat())
-    elif 'last week' in message:
-        date_list.append((today - timedelta(days=7)).isoformat())
-        date_list.append(today.isoformat())
-    elif match := re.search(r'last\s+(\d+)\s+days?', message):
+    # elif 'last week' in message:
+    #     date_list.append((today - timedelta(days=7)).isoformat())
+    #     date_list.append(today.isoformat())
+    elif match := re.search(r'last\s+(\d+)\s+days?', message, re.IGNORECASE):
         days = int(match.group(1))
         date_list.append((today - timedelta(days=days)).isoformat())
         date_list.append(today.isoformat())
@@ -78,7 +90,7 @@ def extractDate(message: str) -> List[date]:
 
         if not month_match:
             # case where month is given before date, e.g. April 6
-            month_check = rf'\b({month}|{month[:3]})\s*' + date_regex + year_regex
+            month_check = rf'({month}|{month[:3]}).?\s*' + date_regex + year_regex
             month_match = re.findall(month_check, message, flags=re.IGNORECASE)
             date_idx = 1
 

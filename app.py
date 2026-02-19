@@ -3,16 +3,18 @@ from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
 from datetime import datetime
 import re
+import csv
 import socket
 import traceback
 
 from db_handler import get_db_handler
-from ai_handler import ask_general_question
+from ai_handler import ask_general_question, query_processor_LLM
 from quick_responses import check_quick_response, learn_from_conversation
 from context_manager import get_context_manager
 from knowledge_base import get_knowledge_base
 from query_router import extract_database_name
 from session_manager import get_session_manager
+from unified_mcp_client import get_sync_wrapper
 from activity_routes import handle_activity_query
 from attendance_routes import handle_attendance_query
 from database_routes import handle_database_query
@@ -73,21 +75,29 @@ def chat():
         session_mgr.add_message(session_id, user_msg)
         
         # Check for quick responses first
-        quick_resp = check_quick_response(message)
-        if quick_resp:
-            bot_msg = session_mgr.create_message('bot', quick_resp, session_id, 
-                                                 user_msg['id'], response_type='quick')
-            session_mgr.add_message(session_id, bot_msg)
-            context_mgr.add_message(session_id, actual_message, 'user')
-            context_mgr.add_message(session_id, quick_resp, 'bot')
-            learn_from_conversation(session_mgr.get_session(session_id))
-            return jsonify(bot_msg)
+        # quick_resp = check_quick_response(message)
+        # if quick_resp:
+        #     bot_msg = session_mgr.create_message('bot', quick_resp, session_id, 
+        #                                          user_msg['id'], response_type='quick')
+        #     session_mgr.add_message(session_id, bot_msg)
+        #     context_mgr.add_message(session_id, message, 'user')
+        #     context_mgr.add_message(session_id, quick_resp, 'bot')
+        #     learn_from_conversation(session_mgr.get_session(session_id))
+        #     return jsonify(bot_msg)
+        
+        name_pattern = r'name is (\w+)'
+        name_match = re.search(name_pattern, message)
+        if name_match:
+            context_mgr.add_fact(session_id, {'User name': name_match.group(1).title()})
+        
+        # message = message.replace('my', context_mgr.fill_name(session_id))
+        # print("New message: ", message)
         
         # Add to context
-        context_mgr.add_message(session_id, actual_message, 'user')
+        # context_mgr.add_message(session_id, actual_message, 'user')
         
         # Get context and knowledge
-        conversation_context = context_mgr.get_relevant_context(session_id, actual_message, max_messages=7)
+        conversation_context = context_mgr.get_relevant_context(session_id, actual_message, max_messages=5)
         relevant_facts = kb.search_facts(message, limit=3)
         relevant_facts_text = [f['fact'] for f in relevant_facts]
 
@@ -95,6 +105,7 @@ def chat():
         # wrapper handles routing logic
         # unified client call appropriate server
         # merge ai handler to sync wrapper
+        # unified_mcp_client = get_sync_wrapper()
         
         # Extract database name
         database = extract_database_name(message) or DEFAULT_DATABASE
@@ -103,11 +114,11 @@ def chat():
         result = None
         
         # Priority 1: Activity Monitoring
-        if 'debug123' not in message and 'debug456' not in message:
-            result = handle_activity_query_via_mcp(message, conversation_context)
+        if 'debug123' in message:
+            result = handle_activity_query_via_mcp(message)
         
         # Priority 2: Attendance
-        if not result and 'debug123' not in message and 'debug456' not in message:
+        elif 'debug456' in message:
             result = handle_attendance_query_via_mcp(message)
         
         # Priority 3: Database queries
@@ -129,7 +140,8 @@ def chat():
         if 'Request timeout' not in result['answer']:
             if 'debug123' in message or 'debug456' in message:
                 message = message[9:]
-            context_mgr.add_message(session_id, result, 'bot')
+            # context_mgr.add_message(session_id, result, 'bot')
+            context_mgr.update_history(session_id, message, result['answer'])
             learn_from_conversation(session_mgr.get_session(session_id))
         
             # Store in knowledge base
@@ -201,6 +213,27 @@ def test_database():
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/chart')
+def homepage():
+    with open('./csv_files/Bryan_2026-02-01_2026-02-15.csv') as csvfile:
+        reader = csv.DictReader(csvfile)
+        records = [row for row in reader]
+
+    tups = {}
+    for rec in records:
+        date_r, time_r = rec['timestamp'].split()
+        h,m,s = time_r.split(':')
+        time_p = float(h) + (float(m)/60)
+        if date_r not in tups:
+            tups[date_r] = [time_p]
+        else:
+            tups[date_r].append(time_p)
+    labels = list(tups.keys())
+    data = list(tups.values())
+    name = records[0]['employee_name']
+    
+    return render_template('chartjs-example.html', labels=labels, data=data, name=name)
 
 def print_startup_banner():
     """Print startup banner with server info"""

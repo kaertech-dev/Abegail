@@ -419,19 +419,8 @@ function addMessage(message, isUser = false, metadata = {}) {
 
     const bubbleClass = metadata.edited ? 'bubble edited' : metadata.regenerated ? 'bubble regenerated' : 'bubble';
 
-    let idx = message.indexOf(".csv") + 4;
-    let filename;
     let csvButton = '';
-    if (idx > 3 && isUser == false) {
-        filename = message.substring(0, idx);
-        message = message.substring(idx);
-        csvButton = `
-            <div class="csv-action">
-                <button type="button" class="download-csv" onclick="downloadCSV('${filename}')" title="download csv">Download csv file</button>
-            </div>
-        `;
-    }
-    else if (metadata.csv) {
+    if (metadata.csv && isUser == false) {
         csvButton = `
             <div class="csv-action">
                 <button type="button" class="download-csv" onclick="downloadCSV('${metadata.csv}')" title="download csv">Download csv file</button>

@@ -5,12 +5,11 @@ from your Flask application. It allows your chatroom to query attendance data.
 """
 
 import asyncio
-import json
 import re
 import time
 # import dateparser
 from datetime import datetime, timedelta
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 from contextlib import asynccontextmanager
 from date_parser import extractDate
 
@@ -18,7 +17,7 @@ from date_parser import extractDate
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-class AttendanceMCPClient:
+class AttendanceMCPClient():
     """Client to interact with Attendance MCP Server"""
     
     def __init__(self, server_script_path: str = "./mcp_attendance_server.py"):
@@ -345,7 +344,8 @@ def detect_attendance_query(message: str) -> Optional[Dict]:
         r'is\s+([A-Za-z,\s]+)\s+here',
         r'is\s+(KE\d{4})\s+present',
         r'check\s+([A-Za-z,\s]+)\s+attendance',
-        # r'what\s+time\s*',
+        r'([A-Za-z,\s]+)\s+attendance',
+        r'attendance\s*(?:of)?\s*([A-Za-z,\s]+)(?=(for|from|on))',
         r'([A-Za-z,\s]+)\s*time\s*out\s*\w*',
         r'([A-Za-z,\s]+) clock out'
     ]
@@ -429,7 +429,7 @@ def detect_attendance_query(message: str) -> Optional[Dict]:
     return query_info if query_info['type'] else None
 
 
-def handle_attendance_query_via_mcp(message: str) -> Optional[str]:
+def handle_attendance_query_via_mcp(message: str) -> dict[str, str]:
     """
     Handle attendance query through MCP server
     
@@ -439,6 +439,7 @@ def handle_attendance_query_via_mcp(message: str) -> Optional[str]:
     Returns:
         Response string, or None if not an attendance query
     """
+    message = message.replace('debug456', '')
     query_info = detect_attendance_query(message)
     
     if not query_info:
@@ -497,10 +498,15 @@ def handle_attendance_query_via_mcp(message: str) -> Optional[str]:
         else:
             return None
         
-        return {'answer': answer, 'response_type': 'attendance'}
+        idx = answer.find('.csv') + 4
+        if idx > 3:
+            filename = answer[:idx]
+            return {'answer': answer[idx:], 'csv_file': filename, 'response_type': 'attendance'}
+        else:
+            return {'answer': answer, 'response_type': 'attendance'}
     
     except Exception as e:
-        return f"❌ **Attendance Query Error:** {str(e)}\n\nPlease check if the MCP server is running."
+        return {'answer': f"❌ **Attendance Query Error:** {str(e)}\n\nPlease check if the MCP server is running.", 'response_type': 'error'}
 
 
 # Example usage in Flask route

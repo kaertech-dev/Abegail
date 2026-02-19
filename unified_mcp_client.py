@@ -1,85 +1,64 @@
 import asyncio
-from contextlib import AsyncExitStack
+import spacy
+from typing import List, Dict, Optional
+from date_parser import extractDate
 
 # MCP imports
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+nlp = spacy.load("en_core_web_md")
+
 server_list = {'attendance-MCP-server': './mcp_attendance_server.py', 
                'activity-MCP-server': './mcp_activity_server.py'}
 
-class UnifiedMCPClient:
+class GeneralMCPClient:
+    """Parent Class for all MCP Clients"""
+    
     def __init__(self):
-        """Initialize MCP client"""
-        self.exit_stack = AsyncExitStack()
-        self.sessions = {}
+        """
+        Initialize MCP client
+        
+        Args:
+            server_script_path: Path to the MCP server script
+        """
+        # self.server_script_path = server_path
+        self.session = None
         self.read_stream = None
         self.write_stream = None
         self._client_context = None
         self.available_tools = []
-
-    async def connect(self, server_path):
-        """Connect to MCP servers"""
-        for server_name, server_path in server_list.items():
+    
+    async def connect(self):
+        """Connect to the MCP server"""
+        for server_path in server_list.values():
             server_params = StdioServerParameters(
                 command="python",
                 args=[server_path],
                 env=None
             )
             
-            stdio_transport = await self.exit_stack.enter_async_context(
-                stdio_client(server_params))
-            self.read_stream, self.write_stream = stdio_transport
-            session = await self.exit_stack.enter_async_context(
-                ClientSession(self.read_stream, self.write_stream))
-            await session.initialize()
-
-            response = await session.list_tools()
-            for tool in response.tools:
-                self.sessions[tool.name] = session
-                self.available_tools.append({
-                    "name": tool.name,
-                    "description": tool.description,
-                    "input_schema": tool.inputSchema
-                })
-
-    async def disconnect(self):
-        """Clean up resources and close all connections."""
-        await self.exit_stack.aclose()
-    
-    async def execute_tool(self, tool_name, args):
-        """Execute an MCP tool directly with given arguments."""
-        session = self.sessions.get(tool_name)
-        if not session:
-            # print(f"Tool '{tool_name}' not found.")
-            return
+            self._client_context = stdio_client(server_params)
+            self.read_stream, self.write_stream = await self._client_context.__aenter__()
+            self.session = ClientSession(self.read_stream, self.write_stream)
+            await self.session.__aenter__()
+            await self.session.initialize()
+            list_tool = await self.session.list_tools()
+            self.available_tools.extend({tool.name : tool.description} for tool in list_tool)
         
-        try:
-            result = await session.call_tool(tool_name, arguments=args)
-            # print(f"\nTool '{tool_name}' result:")
-            # print(result.content)
-        except Exception as e:
-            print(f"Error executing tool: {e}")
-            # traceback.print_exc()
-
-# async def main():
-#     """Main entry point for the MCP ChatBot application."""
-#     chatbot = UnifiedMCPClient()
-#     try:
-#         await chatbot.connect_to_servers()
-#         # await chatbot.chat_loop()
-#     finally:
-#         await chatbot.cleanup()
-
-
-# if __name__ == "__main__":
-#     asyncio.run(main())
+        print(self.available_tools)
+    
+    async def disconnect(self):
+        """Disconnect from the MCP server"""
+        if self.session:
+            await self.session.__aexit__(None, None, None)
+        if self._client_context:
+            await self._client_context.__aexit__(None, None, None)
 
 class SyncWrapper:
     def __init__(self):
-        self._client = UnifiedMCPClient()
-        self._client.connect()
-        self._loop = ()
+        self._client = None
+        self._loop = None
 
     def _get_event_loop(self):
         """Get or create event loop"""
@@ -98,6 +77,8 @@ class SyncWrapper:
     
     async def _ensure_connected(self):
         """Ensure client is connected"""
+        if self._client is None:
+            self._client = GeneralMCPClient()
         await self._client.connect()
     
     def cleanup(self):
@@ -108,8 +89,45 @@ class SyncWrapper:
             self._run_async(_cleanup())
             self._client = None
     
-    def query_processor():
-        pass
+    def query_processor(message: str):
+        query_type = None
+        emp_id = None
+        ner_not_person = []
+
+        date_input = extractDate(message.lower())[0]
+        processed = nlp(message)
+        for ent in processed.ents:
+            if ent.label_ == 'PERSON':
+                emp_id = ent.text
+            elif ent.label_ == 'ORG':
+                ner_not_person.append(ent.text)
+        
+        activity_keywords = [
+            'activity', 'activities', 'monitoring', 'where is',
+            'what are they doing', 'who is doing', 'doing', 'working',
+            'productivity', 'output', 'cycle time', 'target', 'start time', 'end time',
+            'station', 'customer', 'model', 'operator'
+        ]
+
+        for kw in activity_keywords:
+            if kw in message.lower():
+                query_type = 'activity'
+                break
+
+        attendance_keywords = [
+            'attendance', 'present', 'absent', 'time in', 'clock in', 'check in', 
+            'who is here', 'who is in', 
+            'department', 'headcount', 'employee', 'employees',
+            'timeout', 'time out', 'clock out'
+        ]
+
+        for kw in attendance_keywords:
+            if kw in message.lower():
+                query_type = 'attendance'
+                break
+        
+        if query_type is None:
+            query_type = 'general'
 
     def ai_handler():
         pass
