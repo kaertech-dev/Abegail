@@ -78,7 +78,7 @@ class AttendanceDB:
                     )
                     ORDER BY `timestamp` ASC
                 """
-                search_pattern1 = f"% {employee_identifier}%"
+                search_pattern1 = f"%{employee_identifier}%"
                 search_pattern2 = f"{employee_identifier}"
                 cursor.execute(query, (target_date, search_pattern1, search_pattern2))
             else:
@@ -510,6 +510,11 @@ async def handle_check_attendance(arguments: dict) -> list[TextContent]:
         target_date = parse_date_string(arguments["date"]) or date.today()
     
     employee_id = arguments.get("employee_identifier")
+    if ', ' in employee_id:
+        emp_id = employee_id.split()
+    else:
+        emp_id = employee_id.split()
+        emp_id.reverse()
     
     records = attendance_db.get_records_by_date(target_date, employee_id)
     
@@ -528,14 +533,19 @@ async def handle_check_attendance(arguments: dict) -> list[TextContent]:
         if employee_id:
             text += f"**Filter:** {employee_id}\n"
         text += f"**Total records:** {len(records)}\n\n"
+
+        # text += "<table> <tr> <th>Name</th> <th>Date</th> <th>Time</th> </tr>"
         
         for i, record in enumerate(records, 1):
-            if i <= 20:
+            if i <= 10:
                 text += f"{i}. {format_attendance_record(record)}\n"
+                # text += f"<tr> <td>{record['employee_name']}</td> <td>{record['timestamp'][:10]}</td> <td>{record['timestamp'][11:]}</td> </tr>"
             writer.writerow(record)
         
-        if len(records) > 20:
-            text += f"\n*Showing first 20 of {len(records)} records*"
+        text += "</table>"
+        
+        if len(records) > 10:
+            text += f"\n*Showing first 10 of {len(records)} records*"
     
     return [TextContent(type="text", text=text)]
 
@@ -545,22 +555,26 @@ async def handle_check_presence(arguments: dict) -> list[TextContent]:
     
     target_date = date.today()
     if arguments.get("date"):
-        target_date = parse_date_string(arguments["date"]) or date.today()
+        target_date = parse_date_string(arguments["date"])
     
-    l_name = employee_id.split()
-    records = attendance_db.get_records_by_date(target_date, l_name[0])
-    final_record = []
-    if len(l_name) > 1:
-        for name_part in l_name[1:]:
-            temp = attendance_db.get_records_by_date(target_date, name_part)
+    # try the employee_id as is; should suffice for singular names, employee number, or exact match in <surname, given name>
+    records = attendance_db.get_records_by_date(target_date, employee_id)
+    
+    if not records and employee_id:
+        name_parts = employee_id.split()
+        union = []
+        intersection = []
+        for np in name_parts:
+            temp = attendance_db.get_records_by_date(target_date, np)
             for t in temp:
-                if t in records and t not in final_record:
-                    final_record.append(t)
+                if t not in union:
+                    union.append(t)
+                else:
+                    intersection.append(t)
+        # return [TextContent(type="text", text=str(intersection))]
+        records = intersection if intersection else union
     
-    if not final_record:
-        final_record = records
-    
-    text = format_presence_summary(final_record, employee_id, target_date)
+    text = format_presence_summary(records, employee_id, target_date)
     
     return [TextContent(type="text", text=text)]
 
@@ -601,18 +615,25 @@ async def handle_attendance_range(arguments: dict) -> list[TextContent]:
                 by_date[record_date] = []
             by_date[record_date].append(record)
         
+        # for k, v in by_date.items():
+        #     earliest = min(v, key=lambda x:x['timestamp'])
+        #     latest = max(v, key=lambda x:x['timestamp'])
+        #     by_date[k] = [earliest, latest]
+        
         text += "## Daily Breakdown:\n\n"
+        text += "<table> <thead> <tr> <th>Date</th> <th>Timestamps</th> </tr> </thead> <tbody>"
         for record_date, day_records in sorted(by_date.items()):
-            text += f"### {record_date} ({len(day_records)} records)\n"
-            for record in day_records[:10]:
-                text += f"- {format_attendance_record(record)}"
+            first_row = True
+            for record in day_records:
+                if first_row:
+                    text += f" <tr> <td rowspan='{len(day_records)}'>{record_date}</td>"
+                    first_row = False
+                else:
+                    text += "<tr> "
+                text += f"<td>{str(record['timestamp'])[11:]}</td> </tr>"
                 writer.writerow(record)
-            if len(day_records) > 10:
-                text += f"*...and {len(day_records) - 10} more*\n"
-            text += "\n"
-            # continue writing to file
-            for record in day_records[10:]:
-                writer.writerow(record)
+        
+        text += " </tbody> </table>"
     
     return [TextContent(type="text", text=text)]
 

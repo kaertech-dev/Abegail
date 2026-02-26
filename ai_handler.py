@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Any
 from date_parser import extractDate
 from mcp_activity_server import ActivityAPI
 from mcp_attendance_client import get_attendance_service
-# from mcp_attendance_server import AttendanceDB
+from mcp_attendance_server import AttendanceDB
 
 DEFAULT_MODEL = 'deepseek-r1:14b'
 
@@ -159,8 +159,9 @@ def query_processor(message: str):
         return 'general'
 
 def query_processor_LLM(question: str):
+    # maybe include the last 2 exchanges as well?
     ai_input = f"User Question: '{question}' \n\n"
-    more_prompt = r"List of tools: {'check_presence', 'department_headcount', 'get_latest_entries'}. Choose the best tool to use and output its name enclosed in curly braces. Otherwise, output 'not_attendance' instead."
+    more_prompt = r"List of tools: {check_presence, department_headcount, latest_attendance}. Choose the best tool to use and output its name enclosed in curly braces. Otherwise, output 'not_attendance' instead."
     ai_response = handler_deepseek(ai_input+more_prompt, 'deepseek-r1:7b')
     print(ai_response)
     return ai_response
@@ -180,7 +181,6 @@ def activity_handler(question: str):
     records = api_response['data']['records']
     
     # prepare csv file for writing
-    global filename
     filename = 'activity_' + curr_date + '.csv'
     csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
     writer = csv.DictWriter(csvfile, fieldnames=['Customer', 'Model', 'Station', 'Operator', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status'], extrasaction='ignore')
@@ -192,16 +192,16 @@ def activity_handler(question: str):
         r['Target Cycle Time(s)'] = r.pop('Target(s)')
         r.pop('serial_num')
     
-    return f"Activity Records: {records} Refer to people by name but also give their employee number. Above target is good."
+    return {'csv_file': filename, 'output': f"Activity Records: {records} Refer to people by name but also give their employee number. Lower cycle time means above target."}
 
 def attendance_handler(question: str, tool_call: str) -> dict[str, Any]:
-    global filename
     result = ''
+    chartable = False
     attendanceService = get_attendance_service()
     date_input = extractDate(question)
 
     processed = nlp(question)
-    entities = [ent.text for ent in processed.ents if ent.label_ == 'PERSON']
+    entities = [ent.text for ent in processed.ents]
     if entities:
         emp_id = entities[0]
     elif emp_num := re.search(r'\s+(KE\d+)\s*', question, re.IGNORECASE):
@@ -209,70 +209,67 @@ def attendance_handler(question: str, tool_call: str) -> dict[str, Any]:
     else:
         emp_id = None
     
-    addtl_prompts = ''
+    # print(emp_id)
 
-    # match tool_call:
-        # case 'check_presence':
-        #     processed = nlp(question)
-        #     entities = [ent.text for ent in processed.ents if ent.label_ == 'PERSON']
-        #     records = attendanceService.get_records_by_date(date_input, entities[0])
-        #     fieldnames = ['employee_name', 'employee_num', 'timestamp', 'location']
     if len(date_input) > 1:
         result = attendanceService.get_attendance_range(date_input[0], date_input[1], emp_id)
+        chartable = True
+    
+    elif r'{check_presence}' in tool_call:
+        if not emp_id:
+            emp_match = re.search(r'is (\w+) present', question, re.IGNORECASE)
+            if emp_match:
+                emp_id = emp_match.group(1)
+        result = attendanceService.check_presence(emp_id, date_input[0])
 
-    elif 'get_latest_entries' in tool_call:
-        result = attendanceService.get_latest_entries()
-        # filename = 'latest_attendance_' + date_input + '.csv'
-        # fieldnames = ['employee_name', 'employee_num', 'timestamp', 'location']
-        # addtl_prompts = 'Only list the first 10 entries and sort them by timestamp.'
+    elif r'{latest_attendance}' in tool_call:
+        result = attendanceService.get_latest_entries(None, None)
             
-    elif 'department_headcount' in tool_call:
+    elif r'{department_headcount}' in tool_call:
         dept_param = [dept.lower() for dept in departments if dept.lower() in question.lower()]
         result = attendanceService.department_headcount(dept_param[0], date_input[0])
-        # filename = str(dept_param[0]) + '_' + date_input + '.csv'
-        # fieldnames = ['employee_name', 'employee_num', 'timestamp', 'department']
-        # addtl_prompts = 'Only list the first 20 entries and sort the names alphabetically.'
     
-    elif 'check_presence' in tool_call or 'check_attendance' in tool_call:
+    elif 'check_attendance' in tool_call or not emp_id:
         result = attendanceService.check_attendance(date_input[0], emp_id)
-        # filename = 'attendance_' + date_input + '.csv'
-        # fieldnames = ['employee_name', 'employee_num', 'timestamp', 'location']
-
+    
+    else:
+        directToDB = AttendanceDB()
+        return {'error': directToDB.get_records_by_date(date_input[0], None)}
+        
     idx = result.find('.csv') + 4
     if idx > 3:
         filename = result[:idx]
-        return {'answer': result[idx:], 'csv_file': filename, 'response_type': 'attendance'}
+        return {'answer': result[idx:], 'csv_file': filename, 'with_chart': chartable, 'response_type': 'attendance'}
     else:
         return {'answer': result, 'response_type': 'attendance'}
 
-    # print(addtl_prompts)
-
-    # prepare csv file for writing
-    # csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
-    # writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction='ignore')
-    # writer.writeheader()
-    # for r in records:
-    #     writer.writerow(r)
-    
-    # return f"Attendance Records: {records} Use both names and employee numbers. Ignore ID. " + addtl_prompts
-
 def ask_general_question(question: str, context: Optional[str] = None, 
-                        relevant_facts: Optional[List[str]] = None,
+                        relevant_facts: Optional[Dict] = None,
                         query_analysis: Optional[Dict] = None):
     """Enhanced general question handler with reasoning and GPU optimization"""
     MODEL_NAME = _get_model_name()
     
     # reasoning_context = _build_reasoning_context(question, query_analysis)
     
-    context_section = f"\nRecent conversations:\n{context}\n" if context else ""
-    # facts_section = f"\nRelevant Facts:\n" + "\n".join(f"- {f}" for f in relevant_facts) + "\n" if relevant_facts else ""
-
+    context_section = f"Recent conversations: {context}\n" if context else ""
+    # rel = relevant_facts.get('User name')
+    # if rel:
+    #     question = question.replace('my', rel)
+    #     print(question)
+    filename = ''
     query_type = query_processor(question)
     if query_type == 'attendance':
-        ai_response = query_processor_LLM(question)
-        return attendance_handler(question, ai_response)
+        check_tool = query_processor_LLM(question)
+        handler_response = attendance_handler(question, check_tool)
+        if handler_response.get('answer'):
+            # Tool was properly invoked and returned a formatted string
+            return handler_response
+        else:
+            mcp_section = handler_response['error']
     elif query_type == 'activity':
-        mcp_section = activity_handler(question)
+        output = activity_handler(question)
+        mcp_section = output['output']
+        filename = output['csv_file']
     else:
         mcp_section = 'Not available'
     
@@ -352,31 +349,3 @@ def clean_response(output):
         clean = clean.replace("\n\n\n", "\n\n")
     
     return clean.lstrip(". \n").strip()
-
-def generate_smart_response(query_analysis: Dict, data: any) -> str:
-    """Generate intelligent response based on query analysis"""
-    intent = query_analysis.get('primary_intent')
-    question_type = query_analysis.get('question_type')
-    entities = query_analysis.get('entities', {})
-    
-    # Handle empty data
-    if not data or (isinstance(data, (list, dict)) and len(data) == 0):
-        if intent in ['attendance_check', 'attendance_report']:
-            employee = entities.get('employee_name', [None])[0] or entities.get('employee_id', [None])[0]
-            if employee:
-                if question_type == 'yes_no':
-                    return f"**NO**, {employee} is not present based on available records."
-                else:
-                    return f"No attendance records found for {employee}."
-            else:
-                return "No attendance records found for the specified criteria."
-        else:
-            return "No data found matching your query."
-    
-    # For yes/no attendance questions, provide clear answer
-    if intent == 'attendance_check' and question_type == 'yes_no':
-        employee = entities.get('employee_name', [None])[0] or entities.get('employee_id', [None])[0]
-        if employee and data:
-            return f"**YES**, {employee} is present! Found {len(data) if isinstance(data, list) else 1} attendance record(s)."
-    
-    return None  # Let AI handler process normally

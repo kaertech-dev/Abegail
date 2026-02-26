@@ -8,6 +8,15 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+    <div class="left-panel">
+        <h1>New Features!!!</h1>
+        <div class="setting-item">
+            <button type="button" class="action-button" id="featureChart">Chart Viewer</button>
+        </div>
+        <div class="setting-item">
+            <button type="button" class="action-button" id="featureWebcam">Webcam</button>
+        </div>
+    </div>
     <div class="chat-container" id="chatContainer">
         <div class="chat-header">
             <div class="header-left">
@@ -100,10 +109,12 @@
             <span class="status-indicator" id="statusIndicator"></span>
         </div>
 
-        <div class="chat-input-container">
-            <button class="icon-button" id="attachButton" title="Attach file">
+        <div class="chat-input-container" id="chatInput">
+            <input type="file" name="file" id="file-input" class="hidden-input">
+            <button class="icon-button" id="attachButton" onclick="selectFile()" title="Attach file">
                 <i class="fas fa-paperclip"></i>
             </button>
+            <button id="send-file" class="action-button" style="display: none;"></button>
             <input 
                 type="text" 
                 class="chat-input" 

@@ -9,3 +9,5 @@ mcp==0.9.1
 requests==2.31.0
 dateparser==1.2.2
 pyttsx3==2.99
+spacy==3.8.11
+opencv-python==2.3.5

@@ -429,7 +429,7 @@ def detect_attendance_query(message: str) -> Optional[Dict]:
     return query_info if query_info['type'] else None
 
 
-def handle_attendance_query_via_mcp(message: str) -> dict[str, str]:
+def handle_attendance_query_via_mcp(message: str) -> None | dict[str, str]:
     """
     Handle attendance query through MCP server
     
@@ -439,7 +439,7 @@ def handle_attendance_query_via_mcp(message: str) -> dict[str, str]:
     Returns:
         Response string, or None if not an attendance query
     """
-    message = message.replace('debug456', '')
+    message = message.replace('debug-att', '')
     query_info = detect_attendance_query(message)
     
     if not query_info:

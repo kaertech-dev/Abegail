@@ -110,28 +110,27 @@ body {
     gap: 10px;
 }
 
-.icon-button {
-    width: 40px;
-    height: 40px;
-    border: none;
-    border-radius: 50%;
-    background: rgba(197, 197, 197, 0.6);
-    color: white;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.3s ease;
-    font-size: 16px;
+.left-panel {
+    position: absolute;
+    top: 0;
+    left: 90px;
+    width: 240px;
+    /* height: 100%; */
+    padding: 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    box-shadow: -5px 0 20px var(--shadow);
+    z-index: 1000;
+    overflow-y: auto;
 }
 
-.icon-button:hover {
-    background: rgba(151, 151, 151, 0.3);
-    transform: scale(1.1);
-}
-
-.icon-button:active {
-    transform: scale(0.95);
+.left-panel h1 {
+    color: var(--text-primary);
+    font-size: 25px;
+    align-content: center;
+    margin-top: 10px;
+    margin-bottom: 20px;
+    animation: blink 0.8s infinite;
 }
 
 /* Search Bar */
@@ -586,6 +585,33 @@ body {
     background: var(--danger-hover);
 }
 
+.download-csv {
+    background-color: #919191;
+    border: none;
+    border-radius: 10px;
+    color: white;
+    padding: 5px 10px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 12px;
+}
+
+.download-csv:hover {
+  background-color: #4CAF50; /* Green */
+  color: white;
+}
+
+.bubble table {
+    border-collapse: collapse;
+    width: 60%;
+}
+
+.bubble td, th {
+    border: 1px solid #8b8b8b;
+    padding: 8px;
+}
+
 .timestamp {
     font-size: 11px;
     color: var(--text-tertiary);
@@ -687,6 +713,34 @@ body {
 .chat-input:focus {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+}
+
+.hidden-input {
+    display: none;
+}
+
+.icon-button {
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(197, 197, 197, 0.6);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    font-size: 16px;
+}
+
+.icon-button:hover {
+    background: rgba(151, 151, 151, 0.3);
+    transform: scale(1.1);
+}
+
+.icon-button:active {
+    transform: scale(0.95);
 }
 
 .send-button {
@@ -870,12 +924,9 @@ body {
 }
 
 /* Animations */
-@keyframes fadeIn {
-    from {
+@keyframes blink {
+    50% {
         opacity: 0;
-    }
-    to {
-        opacity: 1;
     }
 }
 

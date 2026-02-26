@@ -1,7 +1,9 @@
 # app.py - Refactored with Modular Architecture
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, Response
+from werkzeug.utils import secure_filename
 from flask_cors import CORS
-from datetime import datetime
+from datetime import datetime, timedelta, date
+import os
 import re
 import csv
 import socket
@@ -14,19 +16,22 @@ from context_manager import get_context_manager
 from knowledge_base import get_knowledge_base
 from query_router import extract_database_name
 from session_manager import get_session_manager
-from unified_mcp_client import get_sync_wrapper
-from activity_routes import handle_activity_query
-from attendance_routes import handle_attendance_query
-from database_routes import handle_database_query
+# from unified_mcp_client import get_sync_wrapper
+# from activity_routes import handle_activity_query
+# from attendance_routes import handle_attendance_query
+# from database_routes import handle_database_query
 
 from mcp_activity_client import handle_activity_query_via_mcp
 from mcp_attendance_client import handle_attendance_query_via_mcp
 
+from camera import VideoCamera
+camera = VideoCamera()
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST"]}})
 
 DEFAULT_DATABASE = "operators"
+CSV_BASE_PATH = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/csv_files/"
 
 def get_local_ip():
     """Get local IP address"""
@@ -41,11 +46,25 @@ def get_local_ip():
 def index():
     return render_template('index.html')
 
+@app.route('/api/upload', methods=['POST'])
+def upload_file():
+    print(request)
+    if 'file' in request.files:
+        input_file = request.files['file']
+        if '.csv' in input_file.filename:
+            filename = secure_filename(input_file.filename)
+            input_file.save(os.path.join(CSV_BASE_PATH, filename))
+            print("File saved.")
+            return jsonify({"success": True}), 200
+        else:
+            return jsonify({'error': 'Not a csv file'}), 400
+    else:
+        return jsonify({'error': 'No file part in the request'}), 400
+
 @app.route('/api/download/<path:filename>', methods=['GET'])
 def download_file(filename):
-    # method to export to csv
-    base_path = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/csv_files/"
-    return send_from_directory(base_path, filename, as_attachment=True)
+    """Endpoint for handling csv exports"""
+    return send_from_directory(CSV_BASE_PATH, filename, as_attachment=True)
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
@@ -66,12 +85,8 @@ def chat():
         # Ensure session exists
         session_mgr.ensure_session_exists(session_id)
         
-        actual_message = message
-        if 'debug123' in message or 'debug456' in message:
-            actual_message = message[9:]
-        
         # Create and add user message
-        user_msg = session_mgr.create_message('user', actual_message, session_id)
+        user_msg = session_mgr.create_message('user', message, session_id)
         session_mgr.add_message(session_id, user_msg)
         
         # Check for quick responses first
@@ -85,21 +100,18 @@ def chat():
         #     learn_from_conversation(session_mgr.get_session(session_id))
         #     return jsonify(bot_msg)
         
-        name_pattern = r'name is (\w+)'
-        name_match = re.search(name_pattern, message)
-        if name_match:
+        if name_match := re.search(r'My name is (\w+)', message, re.IGNORECASE):
             context_mgr.add_fact(session_id, {'User name': name_match.group(1).title()})
-        
-        # message = message.replace('my', context_mgr.fill_name(session_id))
-        # print("New message: ", message)
+        elif ' my ' in message:
+            message = message.replace('my', context_mgr.replace_name(session_id))
         
         # Add to context
         # context_mgr.add_message(session_id, actual_message, 'user')
         
         # Get context and knowledge
-        conversation_context = context_mgr.get_relevant_context(session_id, actual_message, max_messages=5)
-        relevant_facts = kb.search_facts(message, limit=3)
-        relevant_facts_text = [f['fact'] for f in relevant_facts]
+        relevant_context = context_mgr.get_relevant_context(session_id, message, max_messages=5)
+        # relevant_facts = kb.search_facts(message, limit=3)
+        # relevant_facts_text = [f['fact'] for f in relevant_facts]
 
         # synchronous wrapper for unified mcp client
         # wrapper handles routing logic
@@ -114,11 +126,11 @@ def chat():
         result = None
         
         # Priority 1: Activity Monitoring
-        if 'debug123' in message:
+        if 'debug-act' in message:
             result = handle_activity_query_via_mcp(message)
         
         # Priority 2: Attendance
-        elif 'debug456' in message:
+        elif 'debug-att' in message:
             result = handle_attendance_query_via_mcp(message)
         
         # Priority 3: Database queries
@@ -128,18 +140,18 @@ def chat():
         
         # Default: General AI response
         if not result:
-            result = ask_general_question(message, conversation_context)
+            result = ask_general_question(message, relevant_context.get('recent_convo', ''), relevant_context.get('facts', {}))
         
         # Create and add bot message
-        csv_filename = result.get('csv_file')
+        csv_filename = result.get('csv_file', '')
         bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], 
-                                            response_type=result['response_type'], csv = csv_filename)
+                                                response_type=result['response_type'], csv = csv_filename, with_chart = result.get('with_chart', False))
         session_mgr.add_message(session_id, bot_msg)
 
         # Update context and learning
         if 'Request timeout' not in result['answer']:
-            if 'debug123' in message or 'debug456' in message:
-                message = message[9:]
+            if 'debug-att' in message or 'debug-act' in message:
+                message = message[10:]
             # context_mgr.add_message(session_id, result, 'bot')
             context_mgr.update_history(session_id, message, result['answer'])
             learn_from_conversation(session_mgr.get_session(session_id))
@@ -214,26 +226,92 @@ def test_database():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/chart')
-def homepage():
-    with open('./csv_files/Bryan_2026-02-01_2026-02-15.csv') as csvfile:
-        reader = csv.DictReader(csvfile)
-        records = [row for row in reader]
+@app.route('/chart/<path:csv_source>', methods=['GET', 'POST'])
+def homepage(csv_source):
+    """Chart viewer endpoint"""
+    try:
+        # with open('./csv_files/Bryan_2026-02-01_2026-02-15.csv') as csvfile:
+        with open('./csv_files/' + csv_source) as csvfile:
+            reader = csv.DictReader(csvfile)
+            records = [row for row in reader]
+        
+        date_range = csv_source[:-4].split('_')
+        sd = date.fromisoformat(date_range[-2])
+        ed = date.fromisoformat(date_range[-1])
 
-    tups = {}
-    for rec in records:
-        date_r, time_r = rec['timestamp'].split()
-        h,m,s = time_r.split(':')
-        time_p = float(h) + (float(m)/60)
-        if date_r not in tups:
-            tups[date_r] = [time_p]
-        else:
-            tups[date_r].append(time_p)
-    labels = list(tups.keys())
-    data = list(tups.values())
-    name = records[0]['employee_name']
-    
-    return render_template('chartjs-example.html', labels=labels, data=data, name=name)
+        tups = {}
+        while sd <= ed:
+            tups[sd.isoformat()] = [0,0]
+            sd += timedelta(days=1)
+
+        for rec in records:
+            date_r, time_r = rec['timestamp'].split()
+            h,m,s = time_r.split(':')
+            time_p = float(h) + (float(m)/60)
+            if tups[date_r] == [0,0]:
+                tups[date_r] = [time_p]
+            else:
+                tups[date_r].append(time_p)
+        labels = list(tups.keys())
+        data = list(tups.values())
+        name = records[0]['employee_name']
+        
+        return render_template('chartjs-example.html', labels=labels, data=data, name=name)
+    except:
+        return render_template('error.html')
+
+@app.route('/webcam', methods=['GET', 'POST'])
+def cam_base():
+    # print(request.get_data())
+    # if request.method == 'POST':
+    #     if request.form.get("face_detect_box") == 'show':
+    #         camera.setToggle(True)
+    #     elif request.form.get("face_detect_box") == 'hide':
+    #         camera.setToggle(False)
+    #     print("Changed state to ", camera.toggleBox)
+    return render_template('webcam.html')
+
+@app.route('/webcam_get')
+def get_status():
+    """Used for initializing the toggle switches"""
+    status = camera.toggleBox
+    print("Current state: ", status)
+    return jsonify({"status": status})
+
+@app.route('/webcam_update', methods=['POST'])
+def update_status():
+    """Handles commands/toggles"""
+    if request.is_json:
+        data = request.get_json()
+        # print(data)
+        if "change_state" in data:
+            status = data.get("change_state")
+            camera.toggleFaceBox(status)
+            print("Face detection:", camera.toggleBox)
+        elif "video" in data:
+            if data.get("video"):
+                camera.open()
+            else:
+                camera.release()
+            print("Video feed:", camera.isOpened())
+        
+        return jsonify({"success": True}), 200
+    else:
+        return jsonify({"success": False, "message": "Request body must be JSON."}), 400
+
+def gen(camera: VideoCamera):
+    while True:
+        frame = camera.get_frame()
+        if frame:
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        # do NOT put a break here so the feed can continue if stopped
+
+
+@app.route('/video_feed')
+def video_feed():
+    return Response(gen(camera),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 def print_startup_banner():
     """Print startup banner with server info"""
