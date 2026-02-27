@@ -286,7 +286,7 @@ def detect_activity_query(message: str) -> Optional[Dict]:
     
     return query_info if query_info['type'] else None
 
-def handle_activity_query_via_mcp(message: str) -> Optional[str]:
+def handle_activity_query_via_mcp(message: str) -> None | dict[str, str]:
     """
     Handle activity query through MCP server
     
@@ -296,7 +296,7 @@ def handle_activity_query_via_mcp(message: str) -> Optional[str]:
     Returns:
         Response string, or None if not an activity query
     """
-    message = message.replace("debug123", "")
+    message = message.replace("debug-act", "")
     query_info = detect_activity_query(message)
     
     if not query_info:

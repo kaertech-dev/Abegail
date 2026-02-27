@@ -61,6 +61,33 @@ function initializeEventListeners() {
         localStorage.setItem('theme', theme);
         initializeTheme();
     });
+
+    // Feature panel
+    document.getElementById('left-panel').addEventListener('mouseenter', showFeatures);
+    document.getElementById('left-panel').addEventListener('mouseleave', showFeatures);
+    document.getElementById('featureChart').addEventListener('click', gotoChart);
+    document.getElementById('featureWebcam').addEventListener('click', gotoWebcam);
+
+    // File upload, trigger after selection
+    document.getElementById('file-input').addEventListener('change', uploadFile);
+    document.getElementById('cancel-send').addEventListener('click', cancelFile);
+    document.getElementById("send-file").addEventListener('click', () => {
+        const file_input = document.getElementById('file-input');
+        let formData = new FormData();
+        formData.append('file',file_input.files[0]);
+        
+        fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+        })
+            .then(response => response.json())
+            .then(data => {
+                console.log("Submitted file. ", data);
+                cancelFile();
+            })
+            .catch(error => console.error('Error:', error));
+        
+    });
     
     // Settings panel
     document.getElementById('settingsToggle').addEventListener('click', toggleSettings);
@@ -129,7 +156,7 @@ function toggleSettings() {
 function toggleSearch() {
     const searchBar = document.getElementById('searchBar');
     const isVisible = searchBar.style.display !== 'none';
-    searchBar.style.display = isVisible ? 'none' : 'block';
+    searchBar.style.display = isVisible ? 'none' : 'flex';
     if (!isVisible) {
         document.getElementById('searchInput').focus();
     } else {
@@ -266,20 +293,90 @@ function copyMessage() {
     hideContextMenu();
 }
 
+function gotoChart() {
+    // lorem
+    window.open("chart/Vivares_2026-02-09_2026-02-22.csv", "_blank");
+}
+
+function gotoWebcam() {
+    // lorem
+    window.open("webcam", "_blank");
+}
+
+function selectFile() {
+    const fileInput = document.getElementById("file-input");
+    fileInput.click();
+}
+
+function uploadFile() {
+    const fileInput = document.getElementById("file-input");
+    const filename = fileInput.files[0].name;
+    // console.log("You selected:", filename);
+    // fileInput.value = null;
+
+    const sendFile = document.getElementById("send-file");
+    sendFile.innerHTML = "You selected: " + filename;
+    sendFile.style.display = "block";
+}
+
+function showFeatures() {
+    const panel = document.getElementById('left-panel-buttons');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function gotoChart() {
+    // lorem
+    window.open("chart/Vivares_2026-02-09_2026-02-22.csv", "_blank");
+}
+
+function gotoWebcam() {
+    // lorem
+    window.open("webcam", "_blank");
+}
+
+function selectFile() {
+    const fileInput = document.getElementById("file-input");
+    fileInput.click();
+}
+
+function uploadFile() {
+    const fileInput = document.getElementById("file-input");
+    const filename = fileInput.files[0].name;
+    // fileInput.value = null;
+
+    const chatInput = document.getElementById("messageInput");
+    chatInput.style.width = '50px';
+
+    const sendFile = document.getElementById("send-file");
+    sendFile.innerHTML = "Submit the file: " + filename + "?";
+    sendFile.style.width = '350px';
+    sendFile.style.display = "flex";
+
+    const cancel = document.getElementById("cancel-send");
+    cancel.style.display = "flex";
+}
+
+function cancelFile() {
+    const sendFile = document.getElementById("send-file");
+    sendFile.style.display = "none";
+    sendFile.innerHTML = '';
+
+    const cancel = document.getElementById("cancel-send");
+    cancel.style.display = "none";
+}
+
 async function downloadCSV(filename) {
-    // if (!selectedMessageId) return;
-    // const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
-    
     try{
-        const base_path = "http://192.168.1.53:8080/api/download/" + filename;
-        const url = URL.parse(base_path);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `attendance.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        window.location.href = "api/download/" + filename;
+        // const base_path = "api/download/" + filename;
+        // const url = URL.parse(base_path);
+        // const a = document.createElement('a');
+        // a.href = url;
+        // a.download = `attendance.csv`;
+        // document.body.appendChild(a);
+        // a.click();
+        // document.body.removeChild(a);
+        // URL.revokeObjectURL(url);
 
         showNotification("Downloading csv...");
         playSound('success');
@@ -289,6 +386,27 @@ async function downloadCSV(filename) {
     }
     
     hideContextMenu();
+}
+
+async function viewChart(csv_source) {
+    try {
+        window.open("chart/" + csv_source, "_blank");
+        // const base_path = "chart/" + csv_source;
+        // const url = URL.parse(base_path);
+        // const a = document.createElement('a');
+        // a.href = url;
+        // a.target = "_blank";
+        // document.body.appendChild(a);
+        // a.click();
+        // document.body.removeChild(a);
+        // URL.revokeObjectURL(url);
+
+        playSound('success');
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error parsing file to chart data', 'error');
+    }
 }
 
 function reactToMessage() {
@@ -421,9 +539,11 @@ function addMessage(message, isUser = false, metadata = {}) {
 
     let csvButton = '';
     if (metadata.csv && isUser == false) {
+        const chartButton = metadata.with_chart ? `<button type="button" class="download-csv" onclick="viewChart('${metadata.csv}')">View chart</button>` : '';
         csvButton = `
             <div class="csv-action">
                 <button type="button" class="download-csv" onclick="downloadCSV('${metadata.csv}')" title="download csv">Download csv file</button>
+                ${chartButton}
             </div>
         `;
     }
@@ -444,7 +564,6 @@ function addMessage(message, isUser = false, metadata = {}) {
             <div style="flex: 1;">
                 <div class="${bubbleClass}" data-original="${escapeHtml(message)}">
                     ${messageContent}
-
                     ${csvButton}
                 </div>
                 <div class="timestamp">${metadata.timestamp || getCurrentTime()} ${badges}</div>

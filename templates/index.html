@@ -8,11 +8,35 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+<<<<<<< HEAD
+    <div class="left-panel" id="left-panel">
+        <h1>New Features!!!</h1>
+        <div class="left-panel-buttons" id="left-panel-buttons" style="display: none;">
+            <button type="button" class="action-button" id="featureChart">Chart Viewer</button>
+=======
+    <div class="left-panel">
+        <h1>New Features!!!</h1>
+        <div class="setting-item">
+            <button type="button" class="action-button" id="featureChart">Chart Viewer</button>
+        </div>
+        <div class="setting-item">
+>>>>>>> 55c24246486de2299d1607128f2de1afbaf2c468
+            <button type="button" class="action-button" id="featureWebcam">Webcam</button>
+        </div>
+    </div>
     <div class="chat-container" id="chatContainer">
         <div class="chat-header">
             <div class="header-left">
                 <h1>💬 Abegail</h1>
                 <p>Company Data Analysis + General Knowledge Assistant</p>
+            </div>
+            <!-- Search Bar & Results Panel -->
+            <div class="search-bar" id="searchBar" style="display: none;">
+                <button class="icon-button" id="searchClose">
+                    <i class="fas fa-times"></i>
+                </button>
+                <input type="text" id="searchInput" placeholder="Search messages... (Esc to close)" />
+                <div class="search-results" id="searchResults"></div>
             </div>
             <div class="header-actions">
                 <button class="icon-button" id="searchToggle" title="Search messages (Ctrl+F)">
@@ -25,15 +49,6 @@
                     <i class="fas fa-moon"></i>
                 </button>
             </div>
-        </div>
-
-        <!-- Search Bar -->
-        <div class="search-bar" id="searchBar" style="display: none;">
-            <input type="text" id="searchInput" placeholder="Search messages... (Esc to close)" />
-            <button class="icon-button" id="searchClose">
-                <i class="fas fa-times"></i>
-            </button>
-            <div class="search-results" id="searchResults"></div>
         </div>
 
         <!-- Settings Panel -->
@@ -100,8 +115,9 @@
             <span class="status-indicator" id="statusIndicator"></span>
         </div>
 
-        <div class="chat-input-container">
-            <button class="icon-button" id="attachButton" title="Attach file">
+        <div class="chat-input-container" id="chatInput">
+            <input type="file" name="file" id="file-input" class="hidden-input">
+            <button class="icon-button" id="attachButton" onclick="selectFile()" title="Attach file">
                 <i class="fas fa-paperclip"></i>
             </button>
             <input 

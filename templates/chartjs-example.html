@@ -4,10 +4,16 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js/dist/chart.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-    <title>Chart.js Example</title>
+    <title>Abegail Chart Viewer</title>
 </head>
 <body>
-    <div style="height: 50vh; width: 80%;">
+    <div>
+        <label for="file_dropdown">CSV files:</label>
+        <select name="csv_source" id="file_dropdown" required>
+            
+        </select>
+    </div>
+    <div style="height: 70vh; width: 80%;">
         <canvas id="myChart"></canvas>
     </div>
 
@@ -50,11 +56,23 @@
                                 if (context.tick.value == 7 || context.tick.value == 16) {
                                     return 'rgb(190, 40, 40)';
                                 }
+                                else if (context.tick.value == 8 || context.tick.value == 17) {
+                                    return 'rgb(40, 40, 190)';
+                                }
+                                else if (context.tick.value == 9 || context.tick.value == 18) {
+                                    return 'rgb(40, 190, 40)';
+                                }
+                                else if (context.tick.value == 10 || context.tick.value == 19) {
+                                    return 'rgb(240, 240, 40)';
+                                }
                                 return 'rgb(40, 40, 40, 0.5)';
                             },
                             lineWidth: function(context) {
-                                if (context.tick.value == 7 || context.tick.value == 16) {
-                                    return 1.5;
+                                if (context.tick.value >= 7 && context.tick.value <= 10) {
+                                    return 2;
+                                }
+                                else if (context.tick.value >= 16 && context.tick.value <= 19) {
+                                    return 2;
                                 }
                                 return 1;
                             },

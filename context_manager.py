@@ -6,7 +6,7 @@ from collections import deque
 from typing import List, Dict
 from ai_handler import handler_deepseek
 
-CONTEXT_FILE = "conversation_context.json"
+CONTEXT_FILE = "user-profile.json"
 MAX_SESSION_HISTORY = 200
 MODEL_NAME = "deepseek-r1:1.5b"
 
@@ -36,9 +36,11 @@ class SessionHistory:
     def get_context(self) -> deque:
         return self.short_term
     
-    def retrieve_LTsummary(self) -> str:
-        relevant_info = []
-        return handler_deepseek(relevant_info, MODEL_NAME)
+    def retrieve_LTsummary(self, question) -> str:
+        relevant_info = list(self.long_term)[-20:]
+        sum_prompt = f"Please give a brief summary of these conversations between the user and AI assistant: {relevant_info}"
+        new_summary = handler_deepseek(sum_prompt, MODEL_NAME)
+        self.long_term_summary[datetime.today()] = new_summary
 
 class ContextManager:
     def __init__(self):
@@ -61,23 +63,18 @@ class ContextManager:
         
         self.active_sessions[session_id].session_wide_memory.update(dict_entry)
         print(self.active_sessions[session_id].session_wide_memory)
-        
-    # def add_message(self, session_id: str, message: str, message_type: str, metadata: Dict = None):
-    #     """Add message to session history"""
-    #     if session_id not in self.active_sessions:
-    #         self.active_sessions[session_id] = deque(maxlen=MAX_SESSION_HISTORY)
-        
-    #     self.active_sessions[session_id].append({
-    #         'message': message,
-    #         'type': message_type,
-    #         'timestamp': datetime.now().isoformat(),
-    #         'metadata': metadata or {}
-    #     })
     
-    def get_relevant_context(self, session_id: str, current_query: str, max_messages: int = 5) -> str:
-        """Get relevant context based on query"""
+    def replace_name(self, session_id: str) -> str:
         if session_id not in self.active_sessions:
             return ""
+        
+        facts = self.active_sessions[session_id].session_wide_memory
+        return facts["User name"]
+    
+    def get_relevant_context(self, session_id: str, current_query: str, max_messages: int = 5) -> dict:
+        """Get relevant context based on query"""
+        if session_id not in self.active_sessions:
+            return {}
         
         immediate_context = self.active_sessions[session_id].get_context()
         processed = nlp(current_query)
@@ -91,20 +88,9 @@ class ContextManager:
             if processed.similarity(ref) > 0.7:
                 relevant.append(chat)
         
-        return "\n".join(f"User: {msg['User']}\nAssistant: {msg['Assistant']}" for msg in relevant)
-        # query_words = set(current_query.lower().split())
-        
-        # scored = []
-        # for msg in history:
-        #     msg_words = set(msg['User'].lower().split())
-        #     overlap = len(query_words & msg_words) / max(len(query_words), 1)
-        #     if overlap > 0.2:
-        #         scored.append((overlap, msg))
-        
-        # scored.sort(reverse=True, key=lambda x: x[0])
-        # relevant = [msg for _, msg in scored[:max_messages]]
-        
-        # return "\n".join(f"User: {msg['User']}\nAssistant: {msg['Assistant']}" for msg in relevant)
+        some_context = "\n".join(f"User: {msg['User']}\nAssistant: {msg['Assistant']}" for msg in relevant)
+        facts = self.active_sessions[session_id].session_wide_memory
+        return {'facts': facts, 'recent_convo': some_context}
     
     def clear_session(self, session_id: str):
         """Clear session history"""
