@@ -54,7 +54,7 @@ class AttendanceMCPClient():
         if self._client_context:
             await self._client_context.__aexit__(None, None, None)
     
-    async def check_attendance(self, date_str: Optional[str] = None, 
+    async def check_attendance(self, date_str: str, 
                               employee_identifier: Optional[str] = None) -> str:
         """
         Check attendance records for a specific date
@@ -66,9 +66,9 @@ class AttendanceMCPClient():
         Returns:
             Formatted attendance report
         """
-        arguments = {}
-        if date_str:
-            arguments["date"] = date_str
+        arguments = {"date": date_str}
+        # if date_str:
+        #     arguments["date"] = date_str
         if employee_identifier:
             arguments["employee_identifier"] = employee_identifier
         

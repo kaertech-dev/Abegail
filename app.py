@@ -72,6 +72,7 @@ def chat():
         data = request.json
         message = data.get('message', '').strip()
         session_id = data.get('session_id', 'default')
+        result = None
         
         if not message:
             return jsonify({'error': 'Empty message'}), 400
@@ -86,6 +87,13 @@ def chat():
         # Ensure session exists
         # session_mgr.ensure_session_exists(session_id)
         current_session = session_mgr.get_session_object(session_id) # this retrieves the Session Object, or creates one if it doesn't exist
+
+        name_match = re.search(r'my name is (\w+)', message, re.IGNORECASE)
+        if name_match:
+            current_session.user_name = name_match.group(1)
+            print("User name set to: ", name_match.group(1))
+            # text = "Nice to meet you, " + name_match.group(1) + "! 👋 How can I assist you today? If you have any questions about attendance records or manufacturing activity, feel free to ask!"
+            # result = {'answer': text, 'response_type': 'general'}
         
         # Create and add user message
         user_msg = session_mgr.create_message('user', message, session_id)
@@ -106,8 +114,9 @@ def chat():
         # context_mgr.add_message(session_id, actual_message, 'user')
         
         # Get context and knowledge
-        relevant_context = context_mgr.get_relevant_context(session_id, message, max_messages=5)
-        # relevant_context = current_session.get_relevant_context(message)
+        # relevant_context = context_mgr.get_relevant_context(session_id, message, max_messages=5)
+        relevant_context = current_session.get_relevant_context(message)
+        # print(relevant_context)
 
         # synchronous wrapper for unified mcp client
         # wrapper handles routing logic
@@ -119,7 +128,7 @@ def chat():
         database = extract_database_name(message) or DEFAULT_DATABASE
         
         # Route query to appropriate handler
-        result = None
+        # result = None
         
         # Priority 1: Activity Monitoring
         if 'debug-act' in message:
@@ -133,17 +142,22 @@ def chat():
         # if not handler_response:
         #     handler_response = handle_database_query(message, database, conversation_context, relevant_facts_text)
         #     result = handler_response
+
+        # if current_session.user_name:
+            # message = "User name: " + current_session.user_name + " \nQuestion: " + message
+        # message = "Current query: " + message
         
         # Default: General AI response
         if not result:
             # wrap message in a prompt??? '<user_name> is asking: <message>'
-            result = ask_general_question(message, relevant_context, relevant_context)
+            result = ask_general_question("Current query: " + message, relevant_context, current_session.user_name)
         
         # Create and add bot message
         csv_filename = result.get('csv_file', '')
         bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], 
                                                 response_type=result['response_type'], csv = csv_filename, with_chart = result.get('with_chart', False))
-        session_mgr.add_message(session_id, bot_msg)
+        # session_mgr.add_message(session_id, bot_msg)
+        current_session.update_history(message, result['answer'])
 
         # Update context and learning
         if 'Request timeout' not in result['answer']:
@@ -272,7 +286,7 @@ def cam_base():
 def get_status():
     """Used for initializing the toggle switches"""
     status = camera.toggleBox
-    print("Current state: ", status)
+    # print("Current state: ", status)
     return jsonify({"status": status})
 
 @app.route('/webcam_update', methods=['POST'])
@@ -281,16 +295,24 @@ def update_status():
     if request.is_json:
         data = request.get_json()
         # print(data)
-        if "change_state" in data:
-            status = data.get("change_state")
-            camera.toggleFaceBox(status)
-            print("Face detection:", camera.toggleBox)
-        elif "video" in data:
+        if "videoToggle" in data:
             if data.get("video"):
                 camera.open()
             else:
                 camera.release()
-            print("Video feed:", camera.isOpened())
+            # print("Video feed:", camera.isOpened())
+        elif "takeScreenshot" in data:
+            camera.takeScreenshot()
+            print("Screenshot saved.")
+        elif "faceRecog" in data:
+            print(data.get("faceRecog"))
+        elif "freezeFrame" in data:
+            camera.freeze = data.get("freezeFrame")
+            # print("Freeze frame: ", data.get("freezeFrame"))
+        elif "submitName" in data:
+            camera.takeScreenshot(data["submitName"])
+            camera.freeze = False
+            print("Submitted identity: ", data["submitName"])
         
         return jsonify({"success": True}), 200
     else:
@@ -303,7 +325,6 @@ def gen(camera: VideoCamera):
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
         # do NOT put a break here so the feed can continue if stopped
-
 
 @app.route('/video_feed')
 def video_feed():

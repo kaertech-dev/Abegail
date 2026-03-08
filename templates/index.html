@@ -8,19 +8,10 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-<<<<<<< HEAD
     <div class="left-panel" id="left-panel">
         <h1>New Features!!!</h1>
         <div class="left-panel-buttons" id="left-panel-buttons" style="display: none;">
             <button type="button" class="action-button" id="featureChart">Chart Viewer</button>
-=======
-    <div class="left-panel">
-        <h1>New Features!!!</h1>
-        <div class="setting-item">
-            <button type="button" class="action-button" id="featureChart">Chart Viewer</button>
-        </div>
-        <div class="setting-item">
->>>>>>> 55c24246486de2299d1607128f2de1afbaf2c468
             <button type="button" class="action-button" id="featureWebcam">Webcam</button>
         </div>
     </div>
@@ -120,7 +111,8 @@
             <button class="icon-button" id="attachButton" onclick="selectFile()" title="Attach file">
                 <i class="fas fa-paperclip"></i>
             </button>
-            <button id="send-file" class="action-button" style="display: none;"></button>
+            <button id="send-file" class="file-send" style="display: none;"></button>
+            <button id="cancel-send" class="cancel-send" style="display: none;">Cancel</button>
             <input 
                 type="text" 
                 class="chat-input" 
@@ -141,6 +133,9 @@
     <div class="context-menu" id="contextMenu" style="display: none;">
         <button class="context-item" onclick="copyMessage()">
             <i class="fas fa-copy"></i> Copy
+        </button>
+        <button class="context-item" onclick="textToSpeech()">
+            <i class="fa fa-volume-up"></i> Read Aloud
         </button>
         <button class="context-item" onclick="reactToMessage()">
             <i class="fas fa-thumbs-up"></i> React

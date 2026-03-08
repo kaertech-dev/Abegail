@@ -125,15 +125,6 @@ body {
     z-index: 1000;
     overflow-y: auto;
     align-items: center;
-    left: 90px;
-    width: 240px;
-    /* height: 100%; */
-    padding: 10px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    box-shadow: -5px 0 20px var(--shadow);
-    z-index: 1000;
-    overflow-y: auto;
 }
 
 .left-panel h1 {

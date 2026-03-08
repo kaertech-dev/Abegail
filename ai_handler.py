@@ -159,25 +159,37 @@ def query_processor(message: str):
         return 'general'
 
 def query_processor_LLM(question: str):
-    # maybe include the last 2 exchanges as well?
-    ai_input = f"User Question: '{question}' \n\n"
-    more_prompt = r"List of tools: {check_presence, department_headcount, latest_attendance}. Choose the best tool to use and output its name enclosed in curly braces. Otherwise, output 'not_attendance' instead."
-    ai_response = handler_deepseek(ai_input+more_prompt, 'deepseek-r1:7b')
+    ai_input = f"""{question}
+
+List of tools: {{individual_attendance, department_headcount, latest_entries}}.
+Choose the best tool that would be used to address the question, and determine the employee name whose attendance is being asked. If the query is not related to attendance, output 'not_attendance'.
+
+Example: {{"query": "Check Ranbill attendance", "response": "Tool=individual_attendance Employee=Ranbill"}}
+
+Answer:
+Tool=
+Employee="""
+    ai_response = handler_deepseek(ai_input, 'deepseek-r1:7b')
     print(ai_response)
     return ai_response
 
-def activity_handler(question: str):
+def activity_handler(question: str) -> dict[str, Any]:
     # set date input for api endpoint
     curr_date = extractDate(question)[0]
     api_date = f'?start_date={curr_date}&end_date={curr_date}'
 
     # retrieve records from api
     activityService = ActivityAPI()
-    success = False
-    while not success:
-        # replace this api call with server tool call
+    
+    for fail_ctr in range(5):
         api_response = activityService.get_all_data(api_date)
-        success = api_response['success']
+        if api_response['success']:
+            break
+
+    if fail_ctr == 4:
+        print("API failed after 5 times. Returning...")
+        return {'answer': 'API timeout', 'response_type': 'activity'}
+    
     records = api_response['data']['records']
     
     # prepare csv file for writing
@@ -192,9 +204,9 @@ def activity_handler(question: str):
         r['Target Cycle Time(s)'] = r.pop('Target(s)')
         r.pop('serial_num')
     
-    return {'csv_file': filename, 'output': f"Activity Records: {records} Refer to people by name but also give their employee number. Lower cycle time means above target."}
+    return {'csv_file': filename, 'raw_records': records, 'instructions': "Refer to people by name but also give their employee number. Lower cycle time means above target."}
 
-def attendance_handler(question: str, tool_call: str) -> dict[str, Any]:
+def attendance_handler(question: str, tool_call: str, default_name: str) -> dict[str, Any]:
     result = ''
     chartable = False
     attendanceService = get_attendance_service()
@@ -202,39 +214,41 @@ def attendance_handler(question: str, tool_call: str) -> dict[str, Any]:
 
     processed = nlp(question)
     entities = [ent.text for ent in processed.ents]
-    if entities:
-        emp_id = entities[0]
+
+    name_match = re.search(r'Employee=(\w+)', tool_call)
+    if name_match and 'Not' not in name_match.group(1) :
+        emp_id = name_match.group(1)
     elif emp_num := re.search(r'\s+(KE\d+)\s*', question, re.IGNORECASE):
         emp_id = emp_num.group(1)
+    elif emp_match := re.search(r'is (\w+) present', question, re.IGNORECASE):
+        emp_id = emp_match.group(1)
+    elif entities:
+        emp_id = entities[-1]
     else:
-        emp_id = None
+        emp_id = default_name
     
-    # print(emp_id)
+    # print("Employee identifier: ", emp_id)
+    tool_handle = re.search(r'Tool=(\w+)', tool_call, re.IGNORECASE)
+    # print(tool_handle)
 
     if len(date_input) > 1:
         result = attendanceService.get_attendance_range(date_input[0], date_input[1], emp_id)
         chartable = True
     
-    elif r'{check_presence}' in tool_call:
-        if not emp_id:
-            emp_match = re.search(r'is (\w+) present', question, re.IGNORECASE)
-            if emp_match:
-                emp_id = emp_match.group(1)
+    elif r'individual_attendance' in tool_call:
         result = attendanceService.check_presence(emp_id, date_input[0])
 
-    elif r'{latest_attendance}' in tool_call:
+    elif r'latest_entries' in tool_call:
         result = attendanceService.get_latest_entries(None, None)
             
-    elif r'{department_headcount}' in tool_call:
+    elif r'department_headcount' in tool_call:
         dept_param = [dept.lower() for dept in departments if dept.lower() in question.lower()]
         result = attendanceService.department_headcount(dept_param[0], date_input[0])
     
-    elif 'check_attendance' in tool_call or not emp_id:
-        result = attendanceService.check_attendance(date_input[0], emp_id)
-    
     else:
         directToDB = AttendanceDB()
-        return {'error': directToDB.get_records_by_date(date_input[0], None)}
+        # print('fallback. ', date_input)
+        return {'error': directToDB.get_records_by_date(date_input[0], None), 'instructions': 'Include the KE number, timestamp, and location'}
         
     idx = result.find('.csv') + 4
     if idx > 3:
@@ -243,53 +257,51 @@ def attendance_handler(question: str, tool_call: str) -> dict[str, Any]:
     else:
         return {'answer': result, 'response_type': 'attendance'}
 
-def ask_general_question(question: str, context: Optional[str] = None, 
-                        relevant_facts: Optional[Dict] = None,
-                        query_analysis: Optional[Dict] = None):
+def ask_general_question(question: str, context: Optional[List], default_name: Optional[str]):
     """Enhanced general question handler with reasoning and GPU optimization"""
     MODEL_NAME = _get_model_name()
     
-    # reasoning_context = _build_reasoning_context(question, query_analysis)
+    context_section = f" Recent conversation: {context}\n" if context else ""
+    # print(context_section)
     
-    context_section = f"Recent conversations: {context}\n" if context else ""
-    # rel = relevant_facts.get('User name')
-    # if rel:
-    #     question = question.replace('my', rel)
-    #     print(question)
+    handler_response = {}
     filename = ''
     query_type = query_processor(question)
     if query_type == 'attendance':
-        check_tool = query_processor_LLM(question)
-        handler_response = attendance_handler(question, check_tool)
+        tool_call = query_processor_LLM(str(context) + question)
+        handler_response = attendance_handler(question, tool_call, default_name)
+
         if handler_response.get('answer'):
-            # Tool was properly invoked and returned a formatted string
             return handler_response
         else:
-            mcp_section = handler_response['error']
+            mcp_section = f"Attendance Records: {handler_response['error']}"
     elif query_type == 'activity':
-        output = activity_handler(question)
-        mcp_section = output['output']
-        filename = output['csv_file']
+        handler_response = activity_handler(question)
+        if handler_response.get('answer'):
+            return handler_response
+        mcp_section = f"Activity Records: {handler_response['raw_records']}"
+        filename = handler_response['csv_file']
     else:
-        mcp_section = 'Not available'
+        mcp_section = ''
     
-    full_prompt = f"""You are Abegail, a reliable AI assistant that can interface with databases for attendance and manufacturing activity.
+    # >>>> separate prompts for activity and general
+    full_prompt = f"""You are Abegail, an AI assistant for monitoring attendance and manufacturing activity. You can also answer queries about non-company matters.
 
 {context_section}
-Records: {mcp_section}
-User Question: {question}
+{mcp_section}
+{question}
 
 Instructions:
 1. Be informative, concise, and friendly.
 2. Use markdown formatting for better readability.
 3. Provide specific examples from the given data.
-4. If YES/NO question, answer with YES or NO first before giving details.
+{handler_response.get('instructions', '')}
 
 Answer:"""
 
     result = handler_deepseek(full_prompt)
 
-    return {'answer': result, 'csv_file': filename, 'response_type': 'general'}
+    return {'answer': result, 'csv_file': filename, 'response_type': query_type}
 
 def _build_reasoning_context(question: str, query_analysis: Optional[Dict]) -> str:
     """Build context to help AI understand the query better"""

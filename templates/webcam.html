@@ -3,132 +3,50 @@
 <head>
     <title>Abegail Sees Everything</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        .center {
-        display: block;
-        margin-left: auto;
-        margin-right: auto;
-        width: 50%;
-        }
-        
-        .switch {
-        position: relative;
-        display: inline-block;
-        width: 48px;
-        height: 26px;
-        }
-
-        .switch input { 
-        opacity: 0;
-        width: 0;
-        height: 0;
-        }
-
-        .slider {
-        position: absolute;
-        cursor: pointer;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        border-radius: 34px;
-        background-color: #ccc;
-        -webkit-transition: .4s;
-        transition: .4s;
-        }
-
-        .slider:before {
-        position: absolute;
-        content: "";
-        height: 18px;
-        width: 18px;
-        left: 4px;
-        bottom: 4px;
-        border-radius: 50%;
-        background-color: white;
-        -webkit-transition: .4s;
-        transition: .4s;
-        }
-
-        input:checked + .slider {
-        background-color: #2196F3;
-        }
-
-        input:checked + .slider:before {
-        -webkit-transform: translateX(22px);
-        -ms-transform: translateX(22px);
-        transform: translateX(22px);
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='webcam.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <h1>Live Video Stream</h1>
-    <img src="{{ url_for('video_feed') }}"/>
-    <p>Show/Hide face detection boxes
-        <label class="switch" for="toggleBox">
-            <input type="checkbox" name="toggleBox" id="toggleBox" checked>
-            <span class="slider"></span>
-        </label>
-    </p>
-    <p>
-        Enable video feed
-        <label class="switch" for="feedControl">
-            <input type="checkbox" name="feedControl" id="feedControl" checked>
-            <span class="slider"></span>
-        </label>
-    </p>
-    
+    <div class="center-box">
+        <div class="header">
+            <h2>Live Video Stream</h2>
+            <button class="button" id="addFace" onclick="toggleOverlay()">
+                Add
+            </button>
+        </div>
+        <div class="img-container">
+            <img id="live-feed" src="{{ url_for('video_feed') }}"/>
+            <div class="flash" id="flash"></div>
+            <div class="overlay" id="registerOverlay" style="display: none;">
+                <div class="regText">Align your face inside the ellipse, then click Capture.</div>
+                <div class="ellipse"></div>
+                <div class="regButtons">
+                    <button class="buttonRegister" id="registerCapture">Capture</button>
+                    <button class="buttonRegister" id="registerCancel" onclick="toggleOverlay()">Cancel</button>
+                </div>
+            </div>
+        </div>
+        <div class="main-controls">
+            <input type="checkbox" name="feedStatus" id="feedStatus" checked>
+            <button class="button" id="toggleFeed" onclick="toggleFeed()" title="Disable video feed">
+                <i class="fa-solid fa-video-slash"></i>
+             </button>
+            <button class="button" id="takeShot" title="Take a screenshot">
+                <i class="fa-solid fa-camera"></i>
+            </button>
+            <input type="checkbox" name="recogStatus" id="recogStatus">
+            <button class="button" id="toggleRecognition" onclick="toggleRecog()" title="Enable facial recognition">
+                <i class="fa-regular fa-face-grin"></i>
+            </button>
+            <div class="confirmBox" id="confirmBox" style="display: none;">
+                <input type="text" id="nameField" placeholder="Enter name"/>
+                <button class="buttonRegister" id="submitFace">Submit</button>
+                <button class="buttonRegister" id="retakeFace">Retake</button>
+            </div>
+        </div>
+    </div>
 
-    <script>
-        const toggleBox = document.getElementById("toggleBox");
-        const feedControl = document.getElementById("feedControl");
-
-        function fetchStatus() {
-            fetch('/webcam_get')
-                .then(response => response.json())
-                .then(data => {
-                    toggleBox.checked = data.status;
-                    console.log("Checkbox:", toggleBox.checked);
-                })
-                .catch(error => console.error('Error fetching status:', error));
-        }
-
-        fetchStatus();
-
-        toggleBox.addEventListener('change', function () {
-            fetch('/webcam_update', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    change_state: toggleBox.checked
-                })
-            })
-                .then(response => response.json())
-                .then(data => {
-                    console.log("Face detect:", toggleBox.checked);
-                })
-                .catch(error => console.error('Error:', error));
-        });
-
-        feedControl.addEventListener('change', function () {
-            fetch('/webcam_update', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    video: feedControl.checked
-                })
-            })
-                .then(response => response.json())
-                .then(data => {
-                    console.log("Video feed:", feedControl.checked);
-                })
-                .catch(error => console.error('Error:', error));
-        });
-    </script>
+    <script src="{{ url_for('static', filename='webcam.js') }}"></script>
 
 </body>
 </html>

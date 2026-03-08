@@ -9,49 +9,58 @@ from collections import deque
 nlp = spacy.load("en_core_web_md")
 
 class SessionObject:
-    def __init__(self, session_id: str):
-        self.filename = session_id + ".json"
-        self.user_name = ''
-        self.short_term = deque(maxlen=20)
-        self.long_term = ''
+    def __init__(self, session_id: str, profile = 'guest'):
+        self.session_id = session_id
+        self.filename = profile + ".json"
+        self.user_name = '' # store in json as well
+        self.long_term = []
+        self.json_buffer = {"full_history": []}
 
-        # initialize json file with this structure
-        with open(self.filename, mode='w', encoding='utf-8') as json_file:
-            first_entry = {'session_id': session_id, 'full_history' : [], 'summaries': []}
-            json.dump(first_entry, json_file, indent=2, ensure_ascii=False)
+        # load original contents of json file
+        with open(self.filename, mode='r', encoding='utf-8') as json_file:
+            self.json_buffer = json.load(json_file)
+            self.short_term = deque(self.json_buffer['full_history'][-5:], maxlen=10)
     
-    def add_message(self, user_message: str, bot_message: str):
-        user = self.user_name if self.user_name else 'user'
-        entry = {user: user_message, 'bot': bot_message, 'timestamp': datetime.now().strftime("%H:%M")} # need ba magdagdag ng other metadata?
+    def update_history(self, user_message: str, bot_message: str):
+        entry = {'user': user_message, 'bot': bot_message, 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M")}
         self.short_term.append(entry)
 
-        # also add the query-response to json file automatically
-        with open(self.filename, mode='rw', encoding='utf-8') as json_file:
-            full_data = json.load(json_file)
-            full_data['Session history'].append(entry)
-            json.dump(full_data, json_file, indent=2, ensure_ascii=False)
+        # update json file as well
+        self.json_buffer['full_history'].append(entry)
+        json_data = {}
+        with open(self.filename, mode='w', encoding='utf-8') as json_file:
+            json_data['full_history'] = self.json_buffer['full_history'][-200:]
+            json.dump(json_data, json_file, indent=2, ensure_ascii=False)
+    
+    # def trim_long_term(self, current_query: str):
+    #     reference = nlp(current_query)
+    #     trimmed = self.json_buffer['full_history']
+    #     for exchange in self.json_buffer['full_history']:
+    #         processed = nlp(exchange["user"])
+    #         if reference.similarity(processed) < 0.2:
+    #             trimmed.pop(exchange)
     
     def summarize(self):
-        with open(self.filename, mode='rw', encoding='utf-8') as json_file:
+        with open(self.filename, mode='r', encoding='utf-8') as json_file:
             full_data = json.load(json_file)
             # call the llm here?
             # self.long_term = bot_response -> include timestamp inside
             # full_data.get('summaries').append(bot_response)
-            json.dump(full_data, json_file, indent=2, ensure_ascii=False)
+            # json.dump(full_data, json_file, indent=2, ensure_ascii=False)
 
     def get_relevant_context(self, query: str) -> List[Dict]:
         user_key = self.user_name if self.user_name else 'user'
         processed = nlp(query)
         relevant = []
 
-        for message in self.short_term:
+        for message in reversed(self.short_term):
             if len(relevant) == 10:
                 break
 
-            ref = nlp(message[user_key])
-            if processed.similarity(ref) > 0.7:
-                relevant.append(message)
-        
+            # ref = nlp(message['user'])
+            # if processed.similarity(ref) > 0.7:
+            relevant.append({user_key: message['user'], 'response': message['bot']})
+        relevant.reverse()
         return relevant
 
 class SessionManager:

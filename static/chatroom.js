@@ -342,14 +342,12 @@ function selectFile() {
 function uploadFile() {
     const fileInput = document.getElementById("file-input");
     const filename = fileInput.files[0].name;
-    // fileInput.value = null;
 
     const chatInput = document.getElementById("messageInput");
     chatInput.style.width = '50px';
 
     const sendFile = document.getElementById("send-file");
     sendFile.innerHTML = "Submit the file: " + filename + "?";
-    sendFile.style.width = '350px';
     sendFile.style.display = "flex";
 
     const cancel = document.getElementById("cancel-send");
@@ -492,14 +490,16 @@ function playSound(type) {
     }
 }
 
-function textToSpeech(text) {
+function textToSpeech() {
     if (!selectedMessageId) return;
     
     const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
     if (messageBubble) {
+        window.speechSynthesis.cancel();
         const bubble = messageBubble.querySelector('.bubble');
         const text = bubble.textContent.trim();
-        // insert function to read
+        const utterance = new SpeechSynthesisUtterance(text);
+        window.speechSynthesis.speak(utterance);
     }
     
     hideContextMenu();

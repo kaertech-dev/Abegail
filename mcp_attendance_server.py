@@ -289,8 +289,9 @@ def format_attendance_record(record: Dict) -> str:
 
 def format_presence_summary(records: List[Dict], employee_id: str, target_date: date) -> str:
     """Format presence check summary"""
+    curr_time = datetime.now().strftime("%H:%M")
     if not records:
-        return f"❌ **{employee_id}** was **NOT PRESENT** on {target_date}"
+        return f"❌ **{employee_id}** was **NOT PRESENT** on {target_date} as of {curr_time}"
     
     # Group by employee
     by_employee = {}
@@ -509,7 +510,7 @@ async def handle_check_attendance(arguments: dict) -> list[TextContent]:
     if arguments.get("date"):
         target_date = parse_date_string(arguments["date"]) or date.today()
     
-    employee_id = arguments.get("employee_identifier")
+    employee_id = arguments.get("employee_identifier", "")
     if ', ' in employee_id:
         emp_id = employee_id.split()
     else:
@@ -744,10 +745,11 @@ async def handle_latest_entries(arguments: dict) -> list[TextContent]:
     end_time = arguments.get("end_time")
     
     records = attendance_db.get_latest_entries(start_time, end_time, where, limit)
+    curr_time = datetime.now().strftime("%H:%M")
 
     if where == 'last':
         filename = 'latest_entries_' + today + '.csv'
-        text = filename + f"# 🕐 Latest Attendance Entries\n\n"
+        text = filename + f"# 🕐 Latest Attendance Entries as of {curr_time}"
     elif where == 'first':
         filename = 'earliest_entries_' + today + '.csv'
         text = filename + f"# 🕐 Earliest Attendance Entries\n\n"
