@@ -1,32 +1,46 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Abegail Sees Everything</title>
+    <title>Abegail AI Assistant</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='webcam.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="center-box">
+    <div class="center-box" id="center-box">
         <div class="header">
-            <h2>Live Video Stream</h2>
-            <button class="button" id="addFace" onclick="toggleOverlay()">
-                Add
+            <h2>Video Feed</h2>
+            <div id="more-settings" class="more-settings" style="display: none;">
+                <button class="button-header" id="joinMeeting" onclick="showMeeting()" title="Enable/Disable meeting mode">
+                    Meeting Mode
+                </button>
+                <button class="button-header" id="addFace" onclick="toggleOverlay()" title="Register face for recognition">
+                    Register
+                </button>
+                <button class="button-header" id="showGallery" onclick="showGallery()" title="Open side panel to view all images">
+                    Gallery
+                </button>
+            </div>
+            <button class="button-header" id="settingsButton" onclick="showSettings()" title="More options" style="transform: rotate(0);">
+                <i class="fa-solid fa-bars"></i>
             </button>
         </div>
         <div class="img-container">
             <img id="live-feed" src="{{ url_for('video_feed') }}"/>
             <div class="flash" id="flash"></div>
             <div class="overlay" id="registerOverlay" style="display: none;">
-                <div class="regText">Align your face inside the ellipse, then click Capture.</div>
+                <div class="regText">Align your face inside the shape, then click Capture.</div>
                 <div class="ellipse"></div>
                 <div class="regButtons">
-                    <button class="buttonRegister" id="registerCapture">Capture</button>
-                    <button class="buttonRegister" id="registerCancel" onclick="toggleOverlay()">Cancel</button>
+                    <button class="button-register" id="registerCapture">Capture</button>
+                    <button class="button-register" id="registerCancel" onclick="toggleOverlay()">Cancel</button>
                 </div>
             </div>
+            <div id="meeting-view" class="meeting-view" style="display: none;">
+                <p id="meeting-transcript">Meeting transcript appears here.</p>
+            </div>
         </div>
-        <div class="main-controls">
+        <div id="main-controls" class="main-controls">
             <input type="checkbox" name="feedStatus" id="feedStatus" checked>
             <button class="button" id="toggleFeed" onclick="toggleFeed()" title="Disable video feed">
                 <i class="fa-solid fa-video-slash"></i>
@@ -38,14 +52,34 @@
             <button class="button" id="toggleRecognition" onclick="toggleRecog()" title="Enable facial recognition">
                 <i class="fa-regular fa-face-grin"></i>
             </button>
+            <button class="button" id="recordSpeech" onclick="startRecord()" title="Start speech recognition" style="display: none;">
+                <i class="fa-solid fa-microphone"></i>
+            </button>
             <div class="confirmBox" id="confirmBox" style="display: none;">
-                <input type="text" id="nameField" placeholder="Enter name"/>
+                <input type="text" id="nameField" placeholder="Surname, Nickname"/>
                 <button class="buttonRegister" id="submitFace">Submit</button>
                 <button class="buttonRegister" id="retakeFace">Retake</button>
             </div>
         </div>
     </div>
 
+    <div class="right-panel" id="right-panel" style="display: none;">
+        <div class="panel-tabs" id="panel-tabs">
+            <button class="rp-tab" onclick="switchTab(this, event)" id="shotsTab" disabled>Screenshots</button>
+            <button class="rp-tab" onclick="switchTab(this, event)" id="facesTab">Registered Faces</button>
+            <button class="close-panel" id="close-panel" onclick="showGallery()">X</button>
+        </div>
+        <div class="tab-contents" id="shotsContent" style="display: flex;">
+            {% for shot in screenshots %}
+            <img src="/screenshots/{{shot}}" alt="screenshot taken through the webcam" title="{{shot}}"/>
+            {% endfor %}
+        </div>
+        <div class="tab-contents" id="facesContent" style="display: none;">
+            {% for face in known_faces %}
+            <img src="/screenshots/{{ face }}" alt="{{ face.split('/') | last }}" title="{{ face.split('/') | last }}"/>
+            {% endfor %}
+        </div>
+    </div>
     <script src="{{ url_for('static', filename='webcam.js') }}"></script>
 
 </body>

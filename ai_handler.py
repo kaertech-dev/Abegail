@@ -263,6 +263,25 @@ def ask_general_question(question: str, context: Optional[List], default_name: O
     
     context_section = f" Recent conversation: {context}\n" if context else ""
     # print(context_section)
+
+    if ".csv" in question and os.path.exists(question):
+        filename = question
+        text_input = ''
+        with open(filename, 'r') as file:
+            text_input = csv.reader(file)
+        
+        full_prompt = f"""
+File contents: {text_input}
+
+Instructions:
+Give a detailed summary of the file contents.
+Be informative, concise, and friendly.
+
+Answer:"""
+
+        result = handler_deepseek(full_prompt)
+
+        return {'answer': result, 'response_type': 'general'}
     
     handler_response = {}
     filename = ''

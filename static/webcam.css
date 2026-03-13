@@ -39,6 +39,7 @@ body {
     justify-content: center;
     align-items: center;
     padding: 20px;
+    overflow: hidden;
 }
 
 input[type=checkbox] {
@@ -69,7 +70,22 @@ input[type=text]:focus {
     width: 60px;
 }
 
-.buttonRegister {
+.button-header {
+    font-family: inherit;
+    font-size: 1.25em;
+    height: 35px;
+    padding: 4px 9px;
+    border-radius: 20px;
+    border: none;
+    background: rgba(197, 197, 197, 0.6);
+    color: white;
+    width: fit-content;
+    display: flex;
+    align-items: center;
+    transition: transform 0.4s;
+}
+
+.button-register {
     font-family: inherit;
     font-size: 1em;
     padding: 5px 20px;
@@ -77,25 +93,69 @@ input[type=text]:focus {
     border: none;
     background: #ffffffeb;
     color: #0066c1;
-    width: 100px;
+    width: 120px;
     height: fit-content;
     margin: 0 10px;
     font-weight: 500;
 }
 
-.button:active, .buttonRegister:active {
+button:active {
     transform: scale(0.95);
 }
 
+button:hover {
+    background: rgba(151, 151, 151, 0.3);
+    transform: scale(1.1);
+}
+
+button:disabled {
+    color: #a1a1a1;
+}
+
+#toggleRecognition {
+    background: rgb(63 129 63);
+}
+
+/* .meeting {
+    background: var(--bot-bubble-text);
+    color: var(--text-tertiary);
+    font: inherit;
+    font-size: 20px;
+    font-weight: bold;
+    z-index: 0;
+    height: 57px;
+    padding: 15px 20px;
+    border-radius: 10px 0 0 10px;
+    position: absolute;
+    position-anchor: --header;
+    position-area: x-start;
+    transform: translate(160px, 10px);
+}
+
+.meeting:hover {
+    transform: translate(5px, 10px);
+    animation: slideInRight2 0.3s ease;
+} */
+
 .center-box {
     border-radius: 20px;
-    max-width: fit-content;
+    /* max-width: fit-content; */
+    width: 640px;
     display: flex;
     flex-direction: column;
     justify-content: center;
     background: var(--bg-secondary);
     box-shadow: 0 20px 60px var(--shadow);
     overflow: hidden;
+    transition: width 0.5s;
+}
+
+.more-settings {
+    gap: 10px;
+}
+
+.more-settings button {
+    animation: slideInRight 0.3s ease;
 }
 
 .header {
@@ -103,11 +163,13 @@ input[type=text]:focus {
     /* text-align: center; */
     color: white;
     padding: 20px;
-    z-index: 10;
+    z-index: 2;
     display: flex;
     align-items: center;
     justify-content: space-evenly;
     flex-direction: row;
+    gap: 10px;
+    anchor-name: --header;
 }
 
 h2 {
@@ -118,36 +180,36 @@ h2 {
     position: relative;
     display: flex;
     align-items: center;
-    justify-content: center;
+    /* justify-content: center; */
 }
 
 img {
-    border-style: solid;
+    /* border-style: solid;
     border-width: 10px;
-    border-color: var(--bg-tertiary);
+    border-color: var(--bg-tertiary); */
+    height: 480px;
     opacity: 100%;
+    animation: none;
+    transition: height 0.5s;
 }
 
 .flash {
+    display: none;
     width: 640px;
     height: 480px;
     position: absolute;
-    z-index: 2;
+    z-index: 3;
     background: transparent;
-    animation: none;
+    animation: visual-flash 0.6s;
 }
 
 .overlay {
     width: 640px;
     height: 480px;
     position: absolute;
-    z-index: 2;
-    /* background: #ffffff3b; */
-    /* display: flex;
-    justify-content: center;
-    align-items: center;
-    flex-direction: column; */
+    z-index: 3;
     text-align: center;
+    font-size: 20px;
 }
 
 .regText {
@@ -179,6 +241,16 @@ img {
     margin-top: 10px;
 }
 
+.meeting-view {
+    background: transparent;
+    color: var(--text-primary);
+    width: 360px;
+    height: 480px;
+    padding: 5px 20px;
+    overflow-y: auto;
+    animation: slideInLeft 0.3s ease;
+}
+
 .main-controls {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
@@ -196,17 +268,84 @@ img {
     height: 56px;
     border-radius: 20px;
     background: var(--bg-secondary);
-    /* opacity: 50%; */
-    z-index: 3;
+    z-index: 4;
     display: flex;
     flex-direction: row;
     justify-content: center;
     align-items: center;
 }
 
+.right-panel {
+    /* display: none; */
+    position: absolute;
+    z-index: 10;
+    top: 0;
+    right: 0;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border-radius: 15px 0 0 15px;
+    overflow: hidden;
+    width: 360px;
+    height: 100%;
+    animation: slideInRight 0.3s ease;
+}
+
+.panel-tabs {
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    /* justify-content: space-around; */
+}
+
+.rp-tab {
+    background: transparent;
+    border: none;
+    font: inherit;
+    padding: 10px;
+    color: var(--text-primary);
+    flex: 1;
+    font-weight: bold;
+}
+
+.rp-tab:active {
+    transform: scale(0.95);
+}
+
+.rp-tab:disabled {
+    background: var(--primary-color);
+}
+
+.close-panel {
+    background: var(--danger-color);
+    color: white;
+    width: 35px;
+    font-size: larger;
+    border: none;
+}
+
+button#close-panel:hover {
+    background: var(--danger-hover);
+}
+
+.tab-contents {
+    height: 100%;
+    background: var(--bg-primary);
+    overflow-x: hidden;
+    overflow-y: scroll;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-bottom: 50px;
+}
+
+.tab-contents img {
+    width: 320px;
+    height: 240px;
+    margin-top: 15px;
+}
+
 @keyframes visual-flash {
     0% {
-        background-color: yellow;
+        background-color: rgb(255, 202, 152);
         opacity: 100%;
     }
     50% {
@@ -215,6 +354,33 @@ img {
     }
     100% {
         background-color: transparent;
+    }
+}
+
+@keyframes show-video {
+    from {
+        transform: scaleY(0.02);
+    }
+    to {
+        transform: scaleY(1);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideInLeft {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
     }
 }
 

@@ -41,50 +41,6 @@
                 </button>
             </div>
         </div>
-
-        <!-- Settings Panel -->
-        <div class="settings-panel" id="settingsPanel" style="display: none;">
-            <div class="settings-header">
-                <h3>Settings</h3>
-                <button class="icon-button" id="settingsClose">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="settings-content">
-                <div class="setting-item">
-                    <label>Theme</label>
-                    <select id="themeSelect">
-                        <option value="light">Light</option>
-                        <option value="dark">Dark</option>
-                        <option value="auto">Auto (System)</option>
-                    </select>
-                </div>
-                <div class="setting-item">
-                    <label>Font Size</label>
-                    <input type="range" id="fontSizeSlider" min="12" max="18" value="14" />
-                    <span id="fontSizeValue">14px</span>
-                </div>
-                <div class="setting-item">
-                    <label>Auto-scroll</label>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="autoScrollToggle" checked>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div class="setting-item">
-                    <label>Sound Effects</label>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="soundToggle">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div class="setting-item">
-                    <button class="action-button" onclick="exportChat()">
-                        <i class="fas fa-download"></i> Export Chat History
-                    </button>
-                </div>
-            </div>
-        </div>
         
         <div class="chat-messages" id="chatMessages">
             <div class="message-bubble bot"> 
@@ -95,7 +51,9 @@
 
                     <div>
                         <div class="bubble">Hello! I'm Abegail, your AI assistant! 😊<br><br>I can help you with:<br>• Company production data & statistics<br>• General knowledge questions<br>• And much more!<br><br>Try asking me anything!</div>
-                        <div class="timestamp" id="welcomeTime"></div>
+                        <div class="timestamp" id="welcomeTime">
+                            <div class="reactions" id="chatReact"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -123,9 +81,68 @@
             <button class="send-button" id="sendButton" onclick="sendMessage()" title="Send (Enter)">
                 <i class="fas fa-paper-plane"></i>
             </button>
-            <button class="clear-button" id="clearButton" onclick="clearChat()" title="Clear chat">
-                <i class="fas fa-trash"></i>
+            <button class="icon-button" id="recordSpeech" onclick="startRecord()" title="Start speech recognition">
+                <i class="fa-solid fa-microphone"></i>
             </button>
+        </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div class="settings-panel" id="settingsPanel" style="display: none;">
+        <div class="settings-header">
+            <h3>Settings</h3>
+            <button class="icon-button" id="settingsClose">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="settings-content">
+            <div class="setting-item">
+                <label>Theme</label>
+                <select id="themeSelect">
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                    <option value="auto">Auto (System)</option>
+                </select>
+            </div>
+            <div class="setting-item">
+                <label>Font Size</label>
+                <input type="range" id="fontSizeSlider" min="12" max="18" value="14" />
+                <span id="fontSizeValue">14px</span>
+            </div>
+            <div class="setting-item">
+                <label>Auto-scroll</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="autoScrollToggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="setting-item">
+                <label>Sound Effects</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="soundToggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="setting-item">
+                <button class="action-button" onclick="exportChat()">
+                    <i class="fas fa-download"></i> Export Chat History
+                </button>
+            </div>
+            <div class="setting-item">
+                <button class="action-button" id="clearButton" onclick="clearChat()" title="Clear chat">
+                    <i class="fas fa-trash"></i> Clear Chat History
+                </button>
+            </div>
+            <div class="setting-item">
+                <label for="voice-list">Text-To-Speech Voice</label>
+                <select name="voices" id="voice-list">
+                </select>
+            </div>
+            <div class="setting-item">
+                <label>Speech Rate</label>
+                <input type="range" id="rateSlider" min="0.1" max="2" step="0.1" value="0.9" />
+                <span id="rateValue">0.9 (default)</span>
+            </div>
         </div>
     </div>
 

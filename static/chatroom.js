@@ -7,6 +7,20 @@ let autoScroll = localStorage.getItem('autoScroll') !== 'false';
 let soundEnabled = localStorage.getItem('soundEnabled') === 'true';
 let fontSize = parseInt(localStorage.getItem('fontSize')) || 14;
 
+const t2speech = window.speechSynthesis;
+let voices = t2speech.getVoices();
+let selectedVoice;
+let speechRate = 0.9;
+
+// for (let voice of voices) {
+//     if (voice.name == "Microsoft Aria Online (Natural) - English (United States)") {
+//         // localStorage.setItem('defaultVoice', voice);
+//         selectedVoice = voice;
+//         console.log("Default voice set to: ", voice.name);
+//         break;
+//     }
+// }
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     initializeTheme();
@@ -115,11 +129,17 @@ function initializeEventListeners() {
         document.getElementById('fontSizeValue').textContent = `${fontSize}px`;
         localStorage.setItem('fontSize', fontSize);
     });
+
+    document.getElementById('rateSlider').addEventListener('input', (e) => {
+        speechRate = parseFloat(e.target.value);
+        document.getElementById('rateValue').textContent = `${speechRate}`;
+    });
     
     // Keyboard shortcuts
     document.addEventListener('keydown', handleKeyboardShortcuts);
     
     // Close context menu on click outside
+    // remove listener if no context menu
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.context-menu') && !e.target.closest('.message-bubble')) {
             hideContextMenu();
@@ -131,6 +151,7 @@ function initializeEventListeners() {
         const messageBubble = e.target.closest('.message-bubble');
         if (messageBubble) {
             e.preventDefault();
+            messageBubble.querySelector(".bubble").style.border = "1px solid white";
             showContextMenu(e, messageBubble);
         }
     });
@@ -248,10 +269,11 @@ function handleKeyboardShortcuts(e) {
         document.getElementById('messageInput').focus();
     }
 }
-
+let selectedBubble = null;
 function showContextMenu(e, messageBubble) {
     const menu = document.getElementById('contextMenu');
     selectedMessageId = messageBubble.dataset.messageId;
+    selectedBubble = messageBubble;
     
     menu.style.display = 'block';
     menu.style.left = `${e.pageX}px`;
@@ -272,6 +294,8 @@ function showContextMenu(e, messageBubble) {
 function hideContextMenu() {
     document.getElementById('contextMenu').style.display = 'none';
     selectedMessageId = null;
+    selectedBubble.querySelector(".bubble").style.border = "none";
+    selectedBubble = null;
 }
 
 function copyMessage() {
@@ -291,32 +315,6 @@ function copyMessage() {
     }
     
     hideContextMenu();
-}
-
-function gotoChart() {
-    // lorem
-    window.open("chart/Vivares_2026-02-09_2026-02-22.csv", "_blank");
-}
-
-function gotoWebcam() {
-    // lorem
-    window.open("webcam", "_blank");
-}
-
-function selectFile() {
-    const fileInput = document.getElementById("file-input");
-    fileInput.click();
-}
-
-function uploadFile() {
-    const fileInput = document.getElementById("file-input");
-    const filename = fileInput.files[0].name;
-    // console.log("You selected:", filename);
-    // fileInput.value = null;
-
-    const sendFile = document.getElementById("send-file");
-    sendFile.innerHTML = "You selected: " + filename;
-    sendFile.style.display = "block";
 }
 
 function showFeatures() {
@@ -412,6 +410,9 @@ function reactToMessage() {
     
     const reactions = ['👍', '❤️', '😊', '🎉', '👏'];
     const reaction = reactions[Math.floor(Math.random() * reactions.length)];
+    const chatReact = selectedBubble.querySelector("#chatReact");
+    chatReact.innerText += reaction;
+    // console.log(reaction);
     showNotification(`Reacted with ${reaction}!`);
     playSound('success');
     hideContextMenu();
@@ -490,16 +491,105 @@ function playSound(type) {
     }
 }
 
+const SpeechRecognition = window.SpeechRecognition;
+const recognition = new SpeechRecognition();
+recognition.lang = "en-US";
+recognition.continuous = true;
+recognition.maxAlternatives = 50;
+let sttFlag = false;
+
+const speechButton = document.getElementById("recordSpeech");
+function startRecord() {
+    if (sttFlag == false) {
+        t2speech.cancel();
+        speechButton.innerHTML = '<i class="fa-solid fa-stop"></i>';
+        recognition.start();
+        sttFlag = true;
+        console.log("Start speaking...");
+    }
+    else {
+        recognition.stop();
+        sttFlag = false;
+        console.log("Speech recognition stopped.")
+        speechButton.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+    }
+}
+
+recognition.addEventListener('result', (event) => {
+    const stt_result = event.results[event.resultIndex];
+    const transcript = stt_result[0].transcript;
+    const confidence = stt_result[0].confidence;
+    console.log(`Transcript: ${transcript} (Confidence: ${Math.round(confidence * 100)}%)`);
+
+    const chatInput = document.getElementById("messageInput");
+    current_text = chatInput.value;
+    chatInput.value = current_text + " " + transcript;
+});
+
+recognition.onerror = (event) => {
+    console.log("STT Error:", event.error);
+}
+
+recognition.onspeechend = () => {
+    setTimeout(() => {}, 3000);
+    recognition.stop();
+    console.log("Speech recognition stopped.");
+    sendMessage();
+};
+
+let utterance = '';
+const voiceList = document.getElementById("voice-list");
+function populateVoices() {
+    voices = t2speech.getVoices();
+    // console.log(voices);
+    voiceList.replaceChildren();
+    for (let voice of voices) {
+        if (voice.lang == 'en-US' || voice.lang == 'en-GB' || voice.lang == 'en-AU') {
+            const option = document.createElement("option");
+            option.textContent = `${voice.name}`;
+            voiceList.appendChild(option);
+            if (voice.name == "Microsoft Aria Online (Natural) - English (United States)") {
+                selectedVoice = voice;
+                // console.log("Default voice: ", voice.name);
+            }
+        }
+        
+    }
+    voiceList.value = "Microsoft Aria Online (Natural) - English (United States)";
+}
+
+t2speech.onvoiceschanged = populateVoices;
+
+voiceList.addEventListener('change', (e) => {
+    // console.log("testing: ", e.target.value);
+    for (let voice of voices) {
+        if (voice.name == e.target.value) {
+            selectedVoice = voice;
+            console.log("Changed voice to: ", selectedVoice.name);
+            break;
+        }
+    }
+});
+
+function speak(text) {
+    utterance = new SpeechSynthesisUtterance(text);
+    utterance.voice = selectedVoice;
+    utterance.rate = speechRate;
+    t2speech.speak(utterance);
+}
+
 function textToSpeech() {
-    if (!selectedMessageId) return;
+    // change the selector since chat bubbles with the same name default to the first
+    // if (!selectedMessageId) return;
+    if (!selectedBubble) return;
     
-    const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
+    // const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
+    const messageBubble = selectedBubble;
     if (messageBubble) {
-        window.speechSynthesis.cancel();
+        t2speech.cancel();
         const bubble = messageBubble.querySelector('.bubble');
         const text = bubble.textContent.trim();
-        const utterance = new SpeechSynthesisUtterance(text);
-        window.speechSynthesis.speak(utterance);
+        speak(text);
     }
     
     hideContextMenu();
@@ -566,7 +656,10 @@ function addMessage(message, isUser = false, metadata = {}) {
                     ${messageContent}
                     ${csvButton}
                 </div>
-                <div class="timestamp">${metadata.timestamp || getCurrentTime()} ${badges}</div>
+                <div class="timestamp">
+                    <div class="reactions" id="chatReact"></div>
+                    ${metadata.timestamp || getCurrentTime()} ${badges}
+                </div>
             </div>
         </div>
     `;
@@ -733,6 +826,14 @@ function escapeHtml(text) {
 }
 
 async function sendMessage() {
+    if (sttFlag) {
+        recognition.stop();
+        sttFlag = false;
+        console.log("Speech recognition stopped.")
+        speechButton.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+    }
+    
+    t2speech.cancel();
     const input = document.getElementById('messageInput');
     const sendButton = document.getElementById('sendButton');
     const message = input.value.trim();
@@ -766,9 +867,17 @@ async function sendMessage() {
         if (data.error) {
             addMessage(data.message || 'An error occurred', false, { ...data, response_type: 'error' });
             updateStatus('Error', 'error');
-        } else {
+        }
+        else if (data.redirect) {
             addMessage(data.message, false, data);
             updateStatus('Ready', 'ready');
+            window.open("webcam", "_blank");
+        }
+        else {
+            addMessage(data.message, false, data);
+            updateStatus('Ready', 'ready');
+            setTimeout(function() {}, 1000);
+            speak(data.message);
         }
         
     } catch (error) {

@@ -24,7 +24,7 @@ from session_manager import get_session_manager
 from mcp_activity_client import handle_activity_query_via_mcp
 from mcp_attendance_client import handle_attendance_query_via_mcp
 
-from camera import VideoCamera
+from camera import VideoCamera, face_logs
 camera = VideoCamera()
 
 app = Flask(__name__)
@@ -78,6 +78,8 @@ def chat():
             return jsonify({'error': 'Empty message'}), 400
         
         # debug command parser here
+        if 'launch camera' in message:
+            return jsonify({'redirect': 'webcam', 'msg_type': 'bot', 'message': 'Launching video feed...'}), 302
         
         # Initialize managers
         session_mgr = get_session_manager()
@@ -273,21 +275,27 @@ def homepage(csv_source):
 
 @app.route('/webcam', methods=['GET', 'POST'])
 def cam_base():
-    # print(request.get_data())
-    # if request.method == 'POST':
-    #     if request.form.get("face_detect_box") == 'show':
-    #         camera.setToggle(True)
-    #     elif request.form.get("face_detect_box") == 'hide':
-    #         camera.setToggle(False)
-    #     print("Changed state to ", camera.toggleBox)
-    return render_template('webcam.html')
+    screenshots = []
+    with os.scandir('webcam') as d:
+        for e in d:
+            if e.name[-4:] == '.jpg':
+                screenshots.append(f"webcam/{e.name}")
+    screenshots.reverse()
+    
+    known_faces = []
+    with os.scandir('known_faces') as f:
+        for g in f:
+            if g.name[-4:] == '.jpg':
+                known_faces.append(f"known_faces/{g.name}")
 
-@app.route('/webcam_get')
-def get_status():
-    """Used for initializing the toggle switches"""
-    status = camera.toggleBox
-    # print("Current state: ", status)
-    return jsonify({"status": status})
+    return render_template('webcam.html', screenshots=screenshots, known_faces=known_faces)
+
+# @app.route('/webcam_get')
+# def get_status():
+#     """Used for initializing the toggle switches"""
+#     status = camera.toggleBox
+#     print("Current state: ", status)
+#     return jsonify({"status": status})
 
 @app.route('/webcam_update', methods=['POST'])
 def update_status():
@@ -295,24 +303,12 @@ def update_status():
     if request.is_json:
         data = request.get_json()
         # print(data)
-        if "videoToggle" in data:
-            if data.get("video"):
-                camera.open()
-            else:
-                camera.release()
-            # print("Video feed:", camera.isOpened())
-        elif "takeScreenshot" in data:
-            camera.takeScreenshot()
-            print("Screenshot saved.")
-        elif "faceRecog" in data:
-            print(data.get("faceRecog"))
-        elif "freezeFrame" in data:
-            camera.freeze = data.get("freezeFrame")
-            # print("Freeze frame: ", data.get("freezeFrame"))
-        elif "submitName" in data:
-            camera.takeScreenshot(data["submitName"])
-            camera.freeze = False
-            print("Submitted identity: ", data["submitName"])
+        img_src = camera.command(data)
+        if img_src:
+            while not os.path.exists(img_src):
+                # makes sure the file already exists
+                continue
+            return jsonify({"success": True, "img_src": img_src}), 200
         
         return jsonify({"success": True}), 200
     else:
@@ -330,6 +326,37 @@ def gen(camera: VideoCamera):
 def video_feed():
     return Response(gen(camera),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route("/screenshots/<path:filename>", methods=['GET'])
+def serve_img(filename):
+    BASE_PATH = os.getcwd()
+    return send_from_directory(BASE_PATH, filename)
+
+@app.route("/webcam/meeting", methods=['POST'])
+def log_speech2text():
+    if request.is_json:
+        data = request.get_json()
+        transcript = data.get('speech2text', '')
+        with open('speechRecogLogs.txt', 'a') as txt_file:
+            new_text = f"[{datetime.now().strftime("%d/%b/%Y %H:%M:%S")}] - - {transcript} \n"
+            txt_file.write(new_text)
+        
+        # if "faceRecog" in data and data["faceRecog"] == True:
+        #     if not camera.recogEnable:
+        #         camera.recogEnable = True
+        #     try:
+        #         last_append = list(face_logs.values())[-1]
+        #         print("last append: ", last_append)
+        #     except:
+        #         last_append = ''
+        #     return jsonify({"success": True, "names": last_append}), 200
+        # elif data["faceRecog"] == False:
+        #     camera.recogEnable = False
+
+        return jsonify({"success": True}), 200
+    else:
+        return jsonify({"success": False, "message": "Request body must be JSON."}), 400
+    
 
 def print_startup_banner():
     """Print startup banner with server info"""
