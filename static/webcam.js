@@ -107,6 +107,7 @@ function toggleFeed() {
         feedIcon.innerHTML = '<i class="fa-solid fa-video"></i>';
         feedIcon.title = "Enable video feed";
         videoFeed.style.height = '0';
+        ellipseOverlay.style.display = 'none';
     }
     else if (feedStatus.checked == false) {
         feedStatus.checked = true;

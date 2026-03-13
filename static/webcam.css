@@ -103,12 +103,12 @@ button:active {
     transform: scale(0.95);
 }
 
-button:hover {
+.button:hover, .button-header:hover, .button-register:hover {
     background: rgba(151, 151, 151, 0.3);
     transform: scale(1.1);
 }
 
-button:disabled {
+.button:disabled, .button-header:disabled {
     color: #a1a1a1;
 }
 
