@@ -115,6 +115,8 @@ function toggleFeed() {
         feedIcon.title = "Disable video feed";
         videoFeed.style.height = '480px';
     }
+
+    toggleRecognition.disabled = toggleRecognition.disabled ? false : true;
     
     fetch('/webcam_update', {
         method: 'POST',

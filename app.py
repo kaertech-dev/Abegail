@@ -42,6 +42,10 @@ def get_local_ip():
     except:
         return "127.0.0.1"
 
+@app.route('/hometest')
+def new_index():
+    return render_template('home.html')
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -239,8 +243,20 @@ def test_database():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/chart')
+def homepage():
+    return render_template('chartjs-example.html')
+
+@app.route('/getcharts', methods=['GET'])
+def giveChart():
+    BASE_PATH = os.getcwd()
+    fileList = []
+    with os.scandir('./csv_files') as fileIter:
+        fileList = [file.name for file in fileIter]
+    return jsonify({'success': True, 'charts': fileList}), 200
+
 @app.route('/chart/<path:csv_source>', methods=['GET', 'POST'])
-def homepage(csv_source):
+def parseCsv(csv_source):
     """Chart viewer endpoint"""
     try:
         # with open('./csv_files/Bryan_2026-02-01_2026-02-15.csv') as csvfile:
@@ -269,9 +285,9 @@ def homepage(csv_source):
         data = list(tups.values())
         name = records[0]['employee_name']
         
-        return render_template('chartjs-example.html', labels=labels, data=data, name=name)
-    except:
-        return render_template('error.html')
+        return jsonify({'success': True, 'labels': labels, 'data': data, 'name': name}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/webcam', methods=['GET', 'POST'])
 def cam_base():

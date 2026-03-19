@@ -2,6 +2,7 @@
 const sessionId = 'session_' + Date.now();
 let editingMessageId = null;
 let selectedMessageId = null;
+let selectedBubble = null;
 let currentTheme = localStorage.getItem('theme') || 'light';
 let autoScroll = localStorage.getItem('autoScroll') !== 'false';
 let soundEnabled = localStorage.getItem('soundEnabled') === 'true';
@@ -12,21 +13,20 @@ let voices = t2speech.getVoices();
 let selectedVoice;
 let speechRate = 0.9;
 
-// for (let voice of voices) {
-//     if (voice.name == "Microsoft Aria Online (Natural) - English (United States)") {
-//         // localStorage.setItem('defaultVoice', voice);
-//         selectedVoice = voice;
-//         console.log("Default voice set to: ", voice.name);
-//         break;
-//     }
-// }
+const SpeechRecognition = window.SpeechRecognition;
+const recognition = new SpeechRecognition();
+recognition.lang = "en-US";
+recognition.continuous = true;
+recognition.maxAlternatives = 50;
+let sttFlag = false;
+let utterance = '';
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     initializeTheme();
     initializeSettings();
     initializeEventListeners();
-    document.getElementById('welcomeTime').textContent = getCurrentTime();
+    document.getElementById('welcomeTime').innerHTML += getCurrentTime();
     document.getElementById('messageInput').focus();
     
     // Set font size
@@ -75,12 +75,6 @@ function initializeEventListeners() {
         localStorage.setItem('theme', theme);
         initializeTheme();
     });
-
-    // Feature panel
-    document.getElementById('left-panel').addEventListener('mouseenter', showFeatures);
-    document.getElementById('left-panel').addEventListener('mouseleave', showFeatures);
-    document.getElementById('featureChart').addEventListener('click', gotoChart);
-    document.getElementById('featureWebcam').addEventListener('click', gotoWebcam);
 
     // File upload, trigger after selection
     document.getElementById('file-input').addEventListener('change', uploadFile);
@@ -138,20 +132,16 @@ function initializeEventListeners() {
     // Keyboard shortcuts
     document.addEventListener('keydown', handleKeyboardShortcuts);
     
-    // Close context menu on click outside
-    // remove listener if no context menu
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.context-menu') && !e.target.closest('.message-bubble')) {
-            hideContextMenu();
-        }
-    });
-    
     // Right-click context menu
     document.addEventListener('contextmenu', (e) => {
-        const messageBubble = e.target.closest('.message-bubble');
+        const messageBubble = e.target.closest('.bubble');
         if (messageBubble) {
+            if (selectedBubble) {
+                selectedBubble.style.border = 'none';
+                selectedBubble = null;
+            }
             e.preventDefault();
-            messageBubble.querySelector(".bubble").style.border = "1px solid white";
+            messageBubble.style.border = "1px solid var(--main-contrast)";
             showContextMenu(e, messageBubble);
         }
     });
@@ -269,10 +259,39 @@ function handleKeyboardShortcuts(e) {
         document.getElementById('messageInput').focus();
     }
 }
-let selectedBubble = null;
+
+function slideTo(pagename) {
+    const centerSlider = document.getElementById('center-piece');
+    const webcam = document.getElementById('pageWebcam');
+    const aichat = document.getElementById('chatMessages');
+    const chart = document.getElementById('pageChart');
+
+    if (pagename == 'webcam') {
+        aichat.style.display = 'none';
+        chart.style.display = 'none';
+        webcam.style.display = 'flex';
+    }
+    else if (pagename == 'chatroom') {
+        chart.style.display = 'none';
+        webcam.style.display = 'none';
+        aichat.style.display = 'block';
+    }
+    else if (pagename == 'chart') {
+        webcam.style.display = 'none';
+        aichat.style.display = 'none';
+        chart.style.display = 'block';
+    }
+}
+
+function clickOut(e) {
+    if (!e.target.closest('.context-menu') && e.target.closest('.bubble') !== selectedBubble) {
+        hideContextMenu();
+    }
+}
+
 function showContextMenu(e, messageBubble) {
     const menu = document.getElementById('contextMenu');
-    selectedMessageId = messageBubble.dataset.messageId;
+    // selectedMessageId = messageBubble.dataset.messageId;
     selectedBubble = messageBubble;
     
     menu.style.display = 'block';
@@ -289,24 +308,28 @@ function showContextMenu(e, messageBubble) {
             menu.style.top = `${e.pageY - rect.height}px`;
         }
     }, 0);
+
+    document.addEventListener('click', clickOut);
 }
 
 function hideContextMenu() {
     document.getElementById('contextMenu').style.display = 'none';
     selectedMessageId = null;
-    selectedBubble.querySelector(".bubble").style.border = "none";
+    selectedBubble.style.border = "none";
     selectedBubble = null;
+    document.removeEventListener('click', clickOut);
 }
 
 function copyMessage() {
-    if (!selectedMessageId) return;
+    if (!selectedBubble) return;
     
-    const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
-    if (messageBubble) {
-        const bubble = messageBubble.querySelector('.bubble');
-        const text = bubble.textContent.trim();
+    // const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
+    const insideText = selectedBubble.textContent;
+    if (insideText) {
+        // const bubble = messageBubble.querySelector('.bubble');
+        // const text = bubble.textContent.trim();
         
-        navigator.clipboard.writeText(text).then(() => {
+        navigator.clipboard.writeText(insideText.trim()).then(() => {
             showNotification('Message copied to clipboard!');
             playSound('success');
         }).catch(() => {
@@ -317,112 +340,47 @@ function copyMessage() {
     hideContextMenu();
 }
 
-function showFeatures() {
-    const panel = document.getElementById('left-panel-buttons');
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+function showReacts() {
+    const reactItems = document.getElementById("react-items");
+    reactItems.style.display = 'flex';
 }
 
-function gotoChart() {
-    // lorem
-    window.open("chart/Vivares_2026-02-09_2026-02-22.csv", "_blank");
-}
-
-function gotoWebcam() {
-    // lorem
-    window.open("webcam", "_blank");
-}
-
-function selectFile() {
-    const fileInput = document.getElementById("file-input");
-    fileInput.click();
-}
-
-function uploadFile() {
-    const fileInput = document.getElementById("file-input");
-    const filename = fileInput.files[0].name;
-
-    const chatInput = document.getElementById("messageInput");
-    chatInput.style.width = '50px';
-
-    const sendFile = document.getElementById("send-file");
-    sendFile.innerHTML = "Submit the file: " + filename + "?";
-    sendFile.style.display = "flex";
-
-    const cancel = document.getElementById("cancel-send");
-    cancel.style.display = "flex";
-}
-
-function cancelFile() {
-    const sendFile = document.getElementById("send-file");
-    sendFile.style.display = "none";
-    sendFile.innerHTML = '';
-
-    const cancel = document.getElementById("cancel-send");
-    cancel.style.display = "none";
-}
-
-async function downloadCSV(filename) {
-    try{
-        window.location.href = "api/download/" + filename;
-        // const base_path = "api/download/" + filename;
-        // const url = URL.parse(base_path);
-        // const a = document.createElement('a');
-        // a.href = url;
-        // a.download = `attendance.csv`;
-        // document.body.appendChild(a);
-        // a.click();
-        // document.body.removeChild(a);
-        // URL.revokeObjectURL(url);
-
-        showNotification("Downloading csv...");
-        playSound('success');
-    } catch (error) {
-        console.error('Export error:', error);
-        showNotification('Failed to download csv', 'error');
-    }
+function reactToMessage(reaction) {
+    if (!selectedBubble) return;
     
-    hideContextMenu();
-}
-
-async function viewChart(csv_source) {
-    try {
-        window.open("chart/" + csv_source, "_blank");
-        // const base_path = "chart/" + csv_source;
-        // const url = URL.parse(base_path);
-        // const a = document.createElement('a');
-        // a.href = url;
-        // a.target = "_blank";
-        // document.body.appendChild(a);
-        // a.click();
-        // document.body.removeChild(a);
-        // URL.revokeObjectURL(url);
-
-        playSound('success');
-        
-    } catch (error) {
-        console.error('Error:', error);
-        showNotification('Error parsing file to chart data', 'error');
+    // const reactions = ['👍', '❤️', '😊', '🎉', '👏'];
+    // const reaction = reactions[Math.floor(Math.random() * reactions.length)];
+    const reactItems = document.getElementById("react-items");
+    const chatReact = selectedBubble.nextElementSibling.querySelector("#chatReact");
+    let reactList = chatReact.innerText;
+    let position = reactList.indexOf(reaction);
+    if (position == -1) {
+        chatReact.innerText += reaction;
     }
-}
-
-function reactToMessage() {
-    if (!selectedMessageId) return;
-    
-    const reactions = ['👍', '❤️', '😊', '🎉', '👏'];
-    const reaction = reactions[Math.floor(Math.random() * reactions.length)];
-    const chatReact = selectedBubble.querySelector("#chatReact");
-    chatReact.innerText += reaction;
+    else {
+        const reactArray = reactList.split(reaction);
+        let count = parseInt(reactArray[1][0]);
+        if (isNaN(count)) {
+            chatReact.innerText = reactArray[0] + reaction + '2' + reactArray[1];
+        }
+        else {
+            count += 1;
+            chatReact.innerText = reactArray[0] + reaction + count + reactArray[1].substring(1);
+        }
+    }
     // console.log(reaction);
     showNotification(`Reacted with ${reaction}!`);
     playSound('success');
+    reactItems.style.display = 'none';
     hideContextMenu();
 }
 
 function deleteMessage() {
-    if (!selectedMessageId) return;
+    if (!selectedBubble) return;
     
     if (confirm('Are you sure you want to delete this message?')) {
-        const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
+        // const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
+        const messageBubble = selectedBubble.closest(".message-bubble")
         if (messageBubble) {
             messageBubble.style.animation = 'slideOut 0.3s ease';
             setTimeout(() => messageBubble.remove(), 300);
@@ -458,6 +416,59 @@ function showNotification(message, type = 'success') {
     }, 3000);
 }
 
+function selectFile() {
+    const fileInput = document.getElementById("file-input");
+    fileInput.click();
+}
+
+function uploadFile() {
+    const fileInput = document.getElementById("file-input");
+    const filename = fileInput.files[0].name;
+
+    const chatInput = document.getElementById("messageInput");
+    chatInput.style.width = '50px';
+
+    const sendFile = document.getElementById("send-file");
+    sendFile.innerHTML = "Submit the file: " + filename + "?";
+    sendFile.style.display = "flex";
+
+    const cancel = document.getElementById("cancel-send");
+    cancel.style.display = "flex";
+}
+
+function cancelFile() {
+    const sendFile = document.getElementById("send-file");
+    sendFile.style.display = "none";
+    sendFile.innerHTML = '';
+
+    const cancel = document.getElementById("cancel-send");
+    cancel.style.display = "none";
+}
+
+async function downloadCSV(filename) {
+    try{
+        window.location.href = "api/download/" + filename;
+        showNotification("Downloading csv...");
+        playSound('success');
+    } catch (error) {
+        console.error('Export error:', error);
+        showNotification('Failed to download csv', 'error');
+    }
+    
+    hideContextMenu();
+}
+
+async function viewChart(csv_source) {
+    try {
+        window.open("chart/" + csv_source, "_blank");
+        playSound('success');
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error parsing file to chart data', 'error');
+    }
+}
+
 function playSound(type) {
     if (!soundEnabled) return;
     
@@ -491,12 +502,6 @@ function playSound(type) {
     }
 }
 
-const SpeechRecognition = window.SpeechRecognition;
-const recognition = new SpeechRecognition();
-recognition.lang = "en-US";
-recognition.continuous = true;
-recognition.maxAlternatives = 50;
-let sttFlag = false;
 
 const speechButton = document.getElementById("recordSpeech");
 function startRecord() {
@@ -537,7 +542,7 @@ recognition.onspeechend = () => {
     sendMessage();
 };
 
-let utterance = '';
+// let utterance = '';
 const voiceList = document.getElementById("voice-list");
 function populateVoices() {
     voices = t2speech.getVoices();
@@ -868,16 +873,18 @@ async function sendMessage() {
             addMessage(data.message || 'An error occurred', false, { ...data, response_type: 'error' });
             updateStatus('Error', 'error');
         }
-        else if (data.redirect) {
-            addMessage(data.message, false, data);
-            updateStatus('Ready', 'ready');
-            window.open("webcam", "_blank");
-        }
+        // else if (data.redirect) {
+        //     addMessage(data.message, false, data);
+        //     updateStatus('Ready', 'ready');
+        //     window.open("webcam", "_blank");
+        // }
         else {
             addMessage(data.message, false, data);
             updateStatus('Ready', 'ready');
-            setTimeout(function() {}, 1000);
-            speak(data.message);
+            setTimeout(function() {
+                speak(data.message);
+            }, 1000);
+            // speak(data.message);
         }
         
     } catch (error) {
@@ -974,6 +981,248 @@ async function exportChat() {
         console.error('Export error:', error);
         showNotification('Failed to export chat', 'error');
     }
+}
+
+// Starts/stops capturing directly from OpenCV
+const feedStatus = document.getElementById("feedStatus");
+const feedIcon = document.getElementById("toggleFeed");
+const videoFeed = document.getElementById("live-feed");
+const toggleRecognition = document.getElementById("toggleRecognition");
+const recogStatus = document.getElementById("recogStatus");
+
+function toggleFeed() {
+    if (feedStatus.checked == true) {
+        feedStatus.checked = false;
+        feedIcon.innerHTML = '<i class="fa-solid fa-video"></i>';
+        feedIcon.title = "Enable video feed";
+        videoFeed.style.height = '0';
+        // ellipseOverlay.style.display = 'none';
+    }
+    else if (feedStatus.checked == false) {
+        feedStatus.checked = true;
+        feedIcon.innerHTML = '<i class="fa-solid fa-video-slash"></i>';
+        feedIcon.title = "Disable video feed";
+        videoFeed.style.height = '480px';
+    }
+    
+    fetch('/webcam_update', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            videoToggle: feedStatus.checked
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        // console.log("Video feed:", feedStatus.checked);
+        // Wait 5 seconds before enabling/disabling the buttons
+        setTimeout(function(){
+            takeShot.disabled = takeShot.disabled ? false : true;
+            toggleRecognition.disabled = toggleRecognition.disabled ? false : true;
+            // addFace.disabled = addFace.disabled ? false : true;
+        }, 5000);
+    })
+    .catch(error => console.error('Error:', error));
+};
+
+// Screenshot with visual feedback
+function screenShot() {
+    const flash = document.getElementById("flash");
+    flash.style.display = 'flex';
+    fetch('/webcam_update', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            takeScreenshot: true
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log("Screenshot taken.");
+        flash.style.display = 'none';
+        // if (data.img_src) {
+            // shotsHTML = shotsContent.innerHTML;
+            // img_title = "title='" + data.img_src.slice(8) + "'/>";
+            // shotsContent.innerHTML = "<img src='/screenshots/" + data.img_src + "' alt='screenshot taken through the webcam' " + img_title + shotsHTML;
+        // }
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function startFaceRecog() {
+    recogStatus.checked = true;
+    console.log("Face Recognition start.");
+    toggleRecognition.style.background = 'rgb(177 63 63)';
+    toggleRecognition.title = 'Disable facial recognition';
+
+    fetch('/webcam_update', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            faceRecog: true
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        // console.log("Detected faces:", data.names);
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function stopFaceRecog() {
+    recogStatus.checked = false;
+    toggleRecognition.style.background = 'rgba(197, 197, 197, 0.6)';
+    toggleRecognition.title = 'Enable facial recognition';
+    meetingFaceRec = false;
+
+    fetch('/webcam_update', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            faceRecog: false
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        // console.log("Detected faces:", data.names);
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+// Toggle for face recognition
+function toggleRecog() {
+    if (recogStatus.checked == true) {
+        stopFaceRecog();
+    }
+    else if (recogStatus.checked == false) {
+        startFaceRecog();
+    }
+};
+
+const fileDrop = document.getElementById("file_dropdown");
+let myChart = null;
+function populateDropdown() {
+    const response = fetch('/getcharts');
+
+    fetch('/getcharts')
+    .then(response => response.json())
+    .then(data => {
+        const list = data.charts;
+        list.forEach(element => {
+            const option = document.createElement("option");
+            option.textContent = `${element}`;
+            option.value = element;
+            fileDrop.appendChild(option);
+        });
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+populateDropdown();
+
+function parseCsv(filename) {
+    return fetch(`/chart/${filename}`, {})
+    .then(response => response.json())
+    .then(data => {
+        let labels = data.labels;
+        let chartData = data.data;
+        let chartName = data.name;
+        return new Array(chartName, chartData, labels);
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+fileDrop.addEventListener('change', async () => {
+    const filename = fileDrop.value;
+    if (myChart) {
+        myChart.destroy();
+    }
+    let valuesArray = await parseCsv(filename);
+    console.log("array:", valuesArray);
+    const chartName = valuesArray[0];
+    const chartData = valuesArray[1];
+    const labels = valuesArray[2];
+    if (!chartData) {
+        console.log("Error creating chart");
+    }
+    else{
+        createChart(chartName, chartData, labels);
+    }
+});
+
+function createChart(chartName, chartData, labels) {
+    // console.log("Creating chart...");
+    const data = {
+        labels: labels,
+        datasets: [{
+            label: chartName,
+            fill: false,
+            backgroundColor: 'rgb(58, 124, 27, 0.8)',
+            borderColor: 'rgb(58, 124, 27)',
+            borderWidth: 1,
+            axis: 'y',
+            data: chartData, 
+        }],
+    };
+
+    const config = {
+        type: 'bar',
+        data: data,
+        options: { 
+            maintainAspectRatio: false,
+            grouped: false,
+            indexAxis: 'y',
+            scales: {
+                y: {
+                    title: {text: 'Date', display: true},
+                },
+                x: {
+                    title: {text: 'Timestamp', display: true}, 
+                    reverse: false, min: 0, max: 24,
+                    ticks: {maxTicksLimit: 25},
+                    grid: {
+                        color: function(context) {
+                            if (context.tick.value == 7 || context.tick.value == 16) {
+                                return 'rgb(190, 40, 40)';
+                            }
+                            else if (context.tick.value == 8 || context.tick.value == 17) {
+                                return 'rgb(40, 40, 190)';
+                            }
+                            else if (context.tick.value == 9 || context.tick.value == 18) {
+                                return 'rgb(40, 190, 40)';
+                            }
+                            else if (context.tick.value == 10 || context.tick.value == 19) {
+                                return 'rgb(240, 240, 40)';
+                            }
+                            return 'rgb(40, 40, 40, 0.5)';
+                        },
+                        lineWidth: function(context) {
+                            if (context.tick.value >= 7 && context.tick.value <= 10) {
+                                return 2;
+                            }
+                            else if (context.tick.value >= 16 && context.tick.value <= 19) {
+                                return 2;
+                            }
+                            return 1;
+                        },
+                    },
+                }, 
+            },
+        }
+    };
+
+    myChart = new Chart(
+        document.getElementById('myChart'),
+        config
+    );
 }
 
 // Add CSS animations

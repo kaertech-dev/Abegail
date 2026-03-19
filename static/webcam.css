@@ -254,7 +254,7 @@ img {
 .main-controls {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
     padding: 10px;
     gap: 30px;
     border-top: 1px solid var(--border-color);

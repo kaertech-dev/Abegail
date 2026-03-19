@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Abegail AI Assistant</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='home.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="texts">
+        <div id="t" onmouseenter="onHover('top')" onmouseout="outHover(event)" onclick="goTo('top')">Abegail Chatbot</div>
+        <div id="l" onmouseenter="onHover('left')" onmouseout="outHover(event)" onclick="goTo('left')">Webcam</div>
+        <div id="r" onmouseenter="onHover('right')" onmouseout="outHover(event)" onclick="goTo('right')">Chart Viewer</div>
+        <div id="b" onmouseenter="onHover('bottom')" onmouseout="outHover(event)" onclick="goTo('bottom')">Settings</div>
+    </div>
+    <div class="cube" id="cube">
+        <div class="side front"><img src="{{ url_for('static', filename='images/abegail-removebg-preview.png') }}" alt="Abegail Avatar"></div>
+        <div class="side back"></div>
+        <div class="side right"></div>
+        <div class="side left"></div>
+        <div class="side top"></div>
+        <div class="side bottom"></div>
+    </div>
+
+    <script>
+        const theCube = document.getElementById("cube");
+        const textTop = document.getElementById("t");
+        const textLeft = document.getElementById("l");
+        const textRight = document.getElementById("r");
+        const textBottom = document.getElementById("b");
+        function onHover(side) {
+            if (side == 'top') {
+                theCube.style.transform = "rotateX(-5deg)";
+                textTop.style.background = 'linear-gradient(0, #4581487d, transparent)';
+            }
+            else if (side == 'left') {
+                theCube.style.transform = "rotateY(5deg)";
+                textLeft.style.background = 'linear-gradient(270deg, #4581487d, transparent)';
+            }
+            else if (side == 'right') {
+                theCube.style.transform = "rotateY(-5deg)";
+                textRight.style.background = 'linear-gradient(90deg, #4581487d, transparent)';
+            }
+            else if (side == 'bottom') {
+                theCube.style.transform = "rotateX(5deg)";
+                textBottom.style.background = 'linear-gradient(180deg, #4581487d, transparent)';
+            }
+        }
+        function outHover(event) {
+            theCube.style.transform = "rotateX(0) rotateY(0)";
+            event.target.style.background = "transparent";
+        }
+        function goTo(side) {
+            if (side == 'top') {
+                window.open("/");
+            }
+            else if (side == 'left') {
+                window.open("webcam");
+            }
+            else if (side == 'right') {
+                window.open("chart/Vivares_2026-02-09_2026-02-22.csv");
+            }
+            // else if (side == 'bottom') {
+            //     window.open("webcam");
+            // }
+        }
+    </script>
+</body>
+</html>

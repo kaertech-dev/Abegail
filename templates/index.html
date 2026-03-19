@@ -8,13 +8,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="left-panel" id="left-panel">
-        <h1>New Features!!!</h1>
-        <div class="left-panel-buttons" id="left-panel-buttons" style="display: none;">
-            <button type="button" class="action-button" id="featureChart">Chart Viewer</button>
-            <button type="button" class="action-button" id="featureWebcam">Webcam</button>
-        </div>
-    </div>
     <div class="chat-container" id="chatContainer">
         <div class="chat-header">
             <div class="header-left">
@@ -41,20 +34,71 @@
                 </button>
             </div>
         </div>
-        
-        <div class="chat-messages" id="chatMessages">
-            <div class="message-bubble bot"> 
-                <div class="message-content">
-                    <div class="avatar bot-avatar">
-                        <img src="{{ url_for('static', filename='images/abegail-removebg-preview.png') }}" alt="Abegail Avatar">
-                    </div>
 
-                    <div>
-                        <div class="bubble">Hello! I'm Abegail, your AI assistant! 😊<br><br>I can help you with:<br>• Company production data & statistics<br>• General knowledge questions<br>• And much more!<br><br>Try asking me anything!</div>
-                        <div class="timestamp" id="welcomeTime">
-                            <div class="reactions" id="chatReact"></div>
+        <div class="center-piece">
+            <div class="face webcam" id="pageWebcam" style="display: none;">
+                <div class="img-container">
+                    <img id="live-feed" src="{{ url_for('video_feed') }}"/>
+                    <div class="flash" id="flash" style="display: none;"></div>
+                    <!-- <div class="overlay" id="registerOverlay" style="display: none;">
+                        <div class="regText">Align your face inside the shape, then click Capture.</div>
+                        <div class="ellipse"></div>
+                        <div class="regButtons">
+                            <button class="button-register" id="registerCapture">Capture</button>
+                            <button class="button-register" id="registerCancel" onclick="toggleOverlay()">Cancel</button>
+                        </div>
+                    </div> -->
+                    <div id="meeting-view" class="meeting-view" style="display: none;">
+                        <p id="meeting-transcript">Meeting transcript appears here.</p>
+                    </div>
+                </div>
+                <div id="cam-controls" class="cam-controls">
+                    <input type="checkbox" name="feedStatus" id="feedStatus" checked>
+                    <button class="button" id="toggleFeed" onclick="toggleFeed()" title="Disable video feed">
+                        <i class="fa-solid fa-video-slash"></i>
+                    </button>
+                    <button class="button" id="takeShot" onclick="screenShot()" title="Take a screenshot">
+                        <i class="fa-solid fa-camera"></i>
+                    </button>
+                    <input type="checkbox" name="recogStatus" id="recogStatus">
+                    <button class="button" id="toggleRecognition" onclick="toggleRecog()" title="Enable facial recognition">
+                        <i class="fa-regular fa-face-grin"></i>
+                    </button>
+                    <button class="button" id="recordSpeech" onclick="startRecord()" title="Start speech recognition">
+                        <i class="fa-solid fa-microphone"></i>
+                    </button>
+                    <!-- <div class="confirmBox" id="confirmBox" style="display: none;">
+                        <input type="text" id="nameField" placeholder="Surname, Nickname"/>
+                        <button class="button-register" id="submitFace">Submit</button>
+                        <button class="button-register" id="retakeFace">Retake</button>
+                    </div> -->
+                </div>
+            </div>
+            
+            <div class="chat-messages face" id="chatMessages">
+                <div class="message-bubble bot"> 
+                    <div class="message-content">
+                        <div class="avatar bot-avatar">
+                            <img src="{{ url_for('static', filename='images/abegail-removebg-preview.png') }}" alt="Abegail Avatar">
+                        </div>
+
+                        <div>
+                            <div class="bubble">Hello! I'm Abegail, your AI assistant! 😊<br><br>I can help you with:<br>• Company production data & statistics<br>• General knowledge questions<br>• And much more!<br><br>Try asking me anything!</div>
+                            <div class="timestamp" id="welcomeTime">
+                                <div class="reactions" id="chatReact"></div>
+                            </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="face chart-viewer" id="pageChart" style="display: none;">
+                Chart Viewer
+                <label for="file_dropdown">CSV files:</label>
+                <select name="csv_source" id="file_dropdown" required></select>
+
+                <div class="chart-view">
+                    <canvas id="myChart"></canvas>
                 </div>
             </div>
         </div>
@@ -85,6 +129,14 @@
                 <i class="fa-solid fa-microphone"></i>
             </button>
         </div>
+    </div>
+
+    <!-- <img src="{{ url_for('static', filename='images/kaertech_logo.png') }}"> -->
+
+    <div class="main-menu">
+        <button onclick="slideTo('webcam')">Webcam</button>
+        <button onclick="slideTo('chatroom')">AI Chat</button>
+        <button onclick="slideTo('chart')">Chart View</button>
     </div>
 
     <!-- Settings Panel -->
@@ -129,7 +181,7 @@
                 </button>
             </div>
             <div class="setting-item">
-                <button class="action-button" id="clearButton" onclick="clearChat()" title="Clear chat">
+                <button class="action-button danger" id="clearButton" onclick="clearChat()" title="Clear chat">
                     <i class="fas fa-trash"></i> Clear Chat History
                 </button>
             </div>
@@ -154,7 +206,7 @@
         <button class="context-item" onclick="textToSpeech()">
             <i class="fa fa-volume-up"></i> Read Aloud
         </button>
-        <button class="context-item" onclick="reactToMessage()">
+        <button class="context-item" onclick="showReacts()" style="anchor-name: --react-menu;">
             <i class="fas fa-thumbs-up"></i> React
         </button>
         <button class="context-item" onclick="deleteMessage()">
@@ -162,7 +214,16 @@
         </button>
     </div>
 
+    <div class="react-items" id="react-items" style="display: none;">
+        <button onclick="reactToMessage('👍')">👍</button>
+        <button onclick="reactToMessage('❤️')">❤️</button>
+        <button onclick="reactToMessage('😊')">😊</button>
+        <button onclick="reactToMessage('🎉')">🎉</button>
+        <button onclick="reactToMessage('👏')">👏</button>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="{{ url_for('static', filename='chatroom.js') }}"></script>
 </body>
 </html>

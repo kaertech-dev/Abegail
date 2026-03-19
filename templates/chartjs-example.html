@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js/dist/chart.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.min.js"></script> -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script> -->
     <title>Abegail Chart Viewer</title>
 </head>
 <body>
@@ -19,73 +19,126 @@
 
     <!-- Store Flask data as a JavaScript variable -->
     <script>
-        const labels = JSON.parse('{{ labels | tojson | safe }}');
-        const chartData = JSON.parse('{{ data | tojson | safe }}');
-        const chartName = JSON.parse('{{ name | tojson | safe }}');
+        const fileDrop = document.getElementById("file_dropdown");
+        function populateDropdown() {
+            const response = fetch('/getcharts');
 
-        const data = {
-            labels: labels,
-            datasets: [{
-                label: chartName,
-                fill: false,
-                backgroundColor: 'rgb(58, 124, 27, 0.8)',
-                borderColor: 'rgb(58, 124, 27)',
-                borderWidth: 1,
-                axis: 'y',
-                data: chartData, 
-            }],
-        };
+            fetch('/getcharts')
+            .then(response => response.json())
+            .then(data => {
+                const list = data.charts;
+                list.forEach(element => {
+                    const option = document.createElement("option");
+                    option.textContent = `${element}`;
+                    option.value = element;
+                    fileDrop.appendChild(option);
+                });
+            })
+            .catch(error => console.error('Error:', error));
+        }
 
-        const config = {
-            type: 'bar',
-            data: data,
-            options: { 
-                maintainAspectRatio: false,
-                grouped: false,
-                indexAxis: 'y',
-                scales: {
-                    y: {
-                        title: {text: 'Date', display: true},
-                    },
-                    x: {
-                        title: {text: 'Timestamp', display: true}, 
-                        reverse: false, min: 0, max: 24,
-                        ticks: {maxTicksLimit: 25},
-                        grid: {
-                            color: function(context) {
-                                if (context.tick.value == 7 || context.tick.value == 16) {
-                                    return 'rgb(190, 40, 40)';
-                                }
-                                else if (context.tick.value == 8 || context.tick.value == 17) {
-                                    return 'rgb(40, 40, 190)';
-                                }
-                                else if (context.tick.value == 9 || context.tick.value == 18) {
-                                    return 'rgb(40, 190, 40)';
-                                }
-                                else if (context.tick.value == 10 || context.tick.value == 19) {
-                                    return 'rgb(240, 240, 40)';
-                                }
-                                return 'rgb(40, 40, 40, 0.5)';
-                            },
-                            lineWidth: function(context) {
-                                if (context.tick.value >= 7 && context.tick.value <= 10) {
-                                    return 2;
-                                }
-                                else if (context.tick.value >= 16 && context.tick.value <= 19) {
-                                    return 2;
-                                }
-                                return 1;
-                            },
-                        },
-                    }, 
-                },
+        populateDropdown();
+
+        // let labels = null;
+        // let chartData = null;
+        // let chartName = null;
+        let myChart = null;
+        function parseCsv(filename) {
+            return fetch(`/chart/${filename}`, {})
+            .then(response => response.json())
+            .then(data => {
+                let labels = data.labels;
+                let chartData = data.data;
+                let chartName = data.name;
+                return new Array(chartName, chartData, labels);
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        fileDrop.addEventListener('change', async () => {
+            const filename = fileDrop.value;
+            if (myChart) {
+                myChart.destroy();
             }
-        };
+            let valuesArray = await parseCsv(filename);
+            console.log("array:", valuesArray);
+            const chartName = valuesArray[0];
+            const chartData = valuesArray[1];
+            const labels = valuesArray[2];
+            if (!chartData) {
+                console.log("Error creating chart");
+            }
+            else{
+                createChart(chartName, chartData, labels);
+            }
+        });
 
-        const myChart = new Chart(
-            document.getElementById('myChart'),
-            config
-        );
+        function createChart(chartName, chartData, labels) {
+            // console.log("Creating chart...");
+            const data = {
+                labels: labels,
+                datasets: [{
+                    label: chartName,
+                    fill: false,
+                    backgroundColor: 'rgb(58, 124, 27, 0.8)',
+                    borderColor: 'rgb(58, 124, 27)',
+                    borderWidth: 1,
+                    axis: 'y',
+                    data: chartData, 
+                }],
+            };
+
+            const config = {
+                type: 'bar',
+                data: data,
+                options: { 
+                    maintainAspectRatio: false,
+                    grouped: false,
+                    indexAxis: 'y',
+                    scales: {
+                        y: {
+                            title: {text: 'Date', display: true},
+                        },
+                        x: {
+                            title: {text: 'Timestamp', display: true}, 
+                            reverse: false, min: 0, max: 24,
+                            ticks: {maxTicksLimit: 25},
+                            grid: {
+                                color: function(context) {
+                                    if (context.tick.value == 7 || context.tick.value == 16) {
+                                        return 'rgb(190, 40, 40)';
+                                    }
+                                    else if (context.tick.value == 8 || context.tick.value == 17) {
+                                        return 'rgb(40, 40, 190)';
+                                    }
+                                    else if (context.tick.value == 9 || context.tick.value == 18) {
+                                        return 'rgb(40, 190, 40)';
+                                    }
+                                    else if (context.tick.value == 10 || context.tick.value == 19) {
+                                        return 'rgb(240, 240, 40)';
+                                    }
+                                    return 'rgb(40, 40, 40, 0.5)';
+                                },
+                                lineWidth: function(context) {
+                                    if (context.tick.value >= 7 && context.tick.value <= 10) {
+                                        return 2;
+                                    }
+                                    else if (context.tick.value >= 16 && context.tick.value <= 19) {
+                                        return 2;
+                                    }
+                                    return 1;
+                                },
+                            },
+                        }, 
+                    },
+                }
+            };
+
+            myChart = new Chart(
+                document.getElementById('myChart'),
+                config
+            );
+        }
     </script>
 </body>
 </html>
