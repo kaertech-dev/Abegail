@@ -8,74 +8,117 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="chat-container" id="chatContainer">
-        <div class="chat-header">
-            <div class="header-left">
-                <h1>💬 Abegail</h1>
-                <p>Company Data Analysis + General Knowledge Assistant</p>
-            </div>
-            <!-- Search Bar & Results Panel -->
-            <div class="search-bar" id="searchBar" style="display: none;">
-                <button class="icon-button" id="searchClose">
-                    <i class="fas fa-times"></i>
+    <!-- dump for buttons that have event listeners -->
+    <div style="display: none;">
+        <select name="csv_source" id="file_dropdown" required></select>
+        <button class="icon-button" id="themeToggle" title="Toggle dark mode">
+            <i class="fas fa-moon"></i>
+        </button>
+        <div id="moreSettings" class="more-settings"></div>
+        <button id="camGallery" onclick="showGallery()" title="Show gallery">
+            <i class="fa-regular fa-image"></i>
+        </button>
+    </div>
+
+    <!-- Pop-up Buttons -->
+    <div class="popUpButtons">
+        <div class="search-bar" id="searchBar" style="display: none;">
+            <input type="text" id="searchInput" placeholder="Search messages... (Esc to close)" />
+            <div class="search-results" id="searchResults"></div>
+        </div>
+
+        <div class="more-inputs" id="more-inputs" style="display: none;">
+            <input type="file" name="file" id="file-input" class="hidden-input">
+            <button id="attachButton" onclick="selectFile()" title="Attach files">
+                <i class="fas fa-paperclip"></i>
+            </button>
+            <button id="recordSpeech" onclick="startRecordOneShot()" title="Start speech recognition">
+                <i class="fa-solid fa-microphone"></i>
+            </button>
+        </div>
+
+        <div class="cam-options" id="cam-options" style="display: none;">
+            <button id="addFace" onclick="toggleOverlay()">Register Face</button>
+            <button id="addVoice" >Register Voice</button>
+            <input type="checkbox" name="recogStatus" id="recogStatus" >
+            <button id="toggleRecognition" onclick="toggleRecog()" title="Enable facial recognition">
+                Face Recognition
+            </button>
+            <button id="camMeeting" onclick="toggleMeeting()" title="Live transcription">
+                Meeting Mode
+            </button>
+        </div>
+
+        
+    </div>
+    
+    <!-- Main interface -->
+    <div class="center-box" id="center-box">
+        <div class="main-buttons" id="main-buttons">
+            <div class="right-buttons" id="right-buttons">
+                <button id="openWebcam" title="Open webcam window" onclick="toggleWebcam()">
+                    <i class="fa-solid fa-video"></i>
                 </button>
-                <input type="text" id="searchInput" placeholder="Search messages... (Esc to close)" />
-                <div class="search-results" id="searchResults"></div>
-            </div>
-            <div class="header-actions">
-                <button class="icon-button" id="searchToggle" title="Search messages (Ctrl+F)">
-                    <i class="fas fa-search"></i>
-                </button>
-                <button class="icon-button" id="settingsToggle" title="Settings">
+                <button id="settingsToggle" title="Settings" title="Open settings">
                     <i class="fas fa-cog"></i>
                 </button>
-                <button class="icon-button" id="themeToggle" title="Toggle dark mode">
-                    <i class="fas fa-moon"></i>
+                <button id="searchToggle" title="Search messages (Ctrl+F)" style="anchor-name: --search-button;">
+                    <i class="fas fa-search"></i>
                 </button>
+            </div>
+            <div class="chat-header">
+                <h2>🤖 Abegail Chat</h2>
             </div>
         </div>
 
-        <div class="center-piece">
-            <div class="face webcam" id="pageWebcam" style="display: none;">
-                <div class="img-container">
-                    <img id="live-feed" src="{{ url_for('video_feed') }}"/>
-                    <div class="flash" id="flash" style="display: none;"></div>
-                    <!-- <div class="overlay" id="registerOverlay" style="display: none;">
-                        <div class="regText">Align your face inside the shape, then click Capture.</div>
-                        <div class="ellipse"></div>
-                        <div class="regButtons">
-                            <button class="button-register" id="registerCapture">Capture</button>
-                            <button class="button-register" id="registerCancel" onclick="toggleOverlay()">Cancel</button>
-                        </div>
-                    </div> -->
-                    <div id="meeting-view" class="meeting-view" style="display: none;">
-                        <p id="meeting-transcript">Meeting transcript appears here.</p>
+        <div class="main-video-ui" id="main-video-ui" style="display: none;">
+            <div class="video-feed" id="video-feed">
+                <img id="live-feed" src="{{ url_for('video_feed') }}"/>
+                <div class="flash" id="flash" style="display: none;"></div>
+                <div class="overlay" id="registerOverlay" style="display: none;">
+                    <div class="regText">Align your face inside the shape, then click Capture.</div>
+                    <div class="ellipse"></div>
+                    <div class="regButtons">
+                        <button class="button-register" id="registerCapture">Capture</button>
+                        <button class="button-register" id="registerCancel" onclick="toggleOverlay()">Cancel</button>
                     </div>
                 </div>
-                <div id="cam-controls" class="cam-controls">
-                    <input type="checkbox" name="feedStatus" id="feedStatus" checked>
-                    <button class="button" id="toggleFeed" onclick="toggleFeed()" title="Disable video feed">
-                        <i class="fa-solid fa-video-slash"></i>
-                    </button>
-                    <button class="button" id="takeShot" onclick="screenShot()" title="Take a screenshot">
-                        <i class="fa-solid fa-camera"></i>
-                    </button>
-                    <input type="checkbox" name="recogStatus" id="recogStatus">
-                    <button class="button" id="toggleRecognition" onclick="toggleRecog()" title="Enable facial recognition">
-                        <i class="fa-regular fa-face-grin"></i>
-                    </button>
-                    <button class="button" id="recordSpeech" onclick="startRecord()" title="Start speech recognition">
+            </div>
+            <div class="confirmBox" id="confirmBox" style="display: none;">
+                <input type="text" id="nameField" placeholder="Surname, Nickname"/>
+                <button class="button-register" id="submitFace">Submit</button>
+                <button class="button-register" id="retakeFace">Retake</button>
+            </div>
+            <div class="cam-controls" id="cam-controls">
+                <input type="checkbox" id="feedStatus" checked/>
+                <button id="toggleFeed" onclick="toggleFeed()" title="Disable video">
+                    <i class="fa-solid fa-video-slash"></i>
+                </button>
+                <button id="camScreenshot" onclick="screenShot()" title="Take a screenshot">
+                    <i class="fa-solid fa-camera"></i>
+                </button>
+                <button id="camOptions" onclick="showSettings()" title="Show more options" style="anchor-name: --burger;">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+            </div>
+            <div class="meeting-view" id="meeting-view" style="display: none;">
+                <p class="meeting-transcript" id="meeting-transcript">Meeting transcript appears here.</p>
+                <div class="meeting-controls" id="meeting-controls">
+                    <button id="start-transcript" title="Start speech recognition" onclick="startRecord()">
                         <i class="fa-solid fa-microphone"></i>
                     </button>
-                    <!-- <div class="confirmBox" id="confirmBox" style="display: none;">
-                        <input type="text" id="nameField" placeholder="Surname, Nickname"/>
-                        <button class="button-register" id="submitFace">Submit</button>
-                        <button class="button-register" id="retakeFace">Retake</button>
-                    </div> -->
+                    <button id="save-transcript" title="Save transcript" onclick="saveTranscript()">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                    </button>
+                    <button id="clear-transcript" title="Clear transcript" onclick="clearTranscript()">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
                 </div>
             </div>
-            
-            <div class="chat-messages face" id="chatMessages">
+        </div>
+
+        <div class="main-chat-ui" id="main-chat-ui">
+            <div class="chat-messages" id="chat-messages">
                 <div class="message-bubble bot"> 
                     <div class="message-content">
                         <div class="avatar bot-avatar">
@@ -92,52 +135,35 @@
                 </div>
             </div>
 
-            <div class="face chart-viewer" id="pageChart" style="display: none;">
-                Chart Viewer
-                <label for="file_dropdown">CSV files:</label>
-                <select name="csv_source" id="file_dropdown" required></select>
-
-                <div class="chart-view">
-                    <canvas id="myChart"></canvas>
-                </div>
+            <div class="status" id="status">
+                <span id="status-file" style="display: none;">
+                    <div class="attached-file" id="attached-file"></div>
+                    <button class="submitAttach" id="submitAttach" onclick="submitFile()">
+                        Submit
+                    </button>
+                    <button class="removeAttach" id="removeAttach" onclick="cancelFile()">
+                        Cancel
+                    </button>
+                </span>
+                <span id="statusText">Ready</span>
+                <span class="status-indicator" id="statusIndicator"></span>
             </div>
-        </div>
 
-        <div class="status" id="status">
-            <span id="statusText">Ready</span>
-            <span class="status-indicator" id="statusIndicator"></span>
-        </div>
-
-        <div class="chat-input-container" id="chatInput">
-            <input type="file" name="file" id="file-input" class="hidden-input">
-            <button class="icon-button" id="attachButton" onclick="selectFile()" title="Attach file">
-                <i class="fas fa-paperclip"></i>
-            </button>
-            <button id="send-file" class="file-send" style="display: none;"></button>
-            <button id="cancel-send" class="cancel-send" style="display: none;">Cancel</button>
-            <input 
-                type="text" 
-                class="chat-input" 
-                id="messageInput" 
-                placeholder="Ask about company data or anything else... (Press Enter to send, Shift+Enter for new line)"
-                onkeypress="handleKeyPress(event)"
-            >
-            <button class="send-button" id="sendButton" onclick="sendMessage()" title="Send (Enter)">
-                <i class="fas fa-paper-plane"></i>
-            </button>
-            <button class="icon-button" id="recordSpeech" onclick="startRecord()" title="Start speech recognition">
-                <i class="fa-solid fa-microphone"></i>
-            </button>
+            <div class="chat-controls" id="chat-controls">
+                <button id="chatOptions" onclick="showMoreInputs()" style="anchor-name: --more-inputs;" title="More input options">
+                    <i class="fa-solid fa-plus"></i>
+                </button>
+                <input type="text" id="chatInput" 
+                    placeholder="(Press Enter to send, Shift+Enter for new line)" 
+                    onkeypress="handleKeyPress(event)">
+                <button id="chatSend" onclick="sendMessage()" title="Send (Enter)">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
         </div>
     </div>
 
     <!-- <img src="{{ url_for('static', filename='images/kaertech_logo.png') }}"> -->
-
-    <div class="main-menu">
-        <button onclick="slideTo('webcam')">Webcam</button>
-        <button onclick="slideTo('chatroom')">AI Chat</button>
-        <button onclick="slideTo('chart')">Chart View</button>
-    </div>
 
     <!-- Settings Panel -->
     <div class="settings-panel" id="settingsPanel" style="display: none;">
@@ -220,6 +246,24 @@
         <button onclick="reactToMessage('😊')">😊</button>
         <button onclick="reactToMessage('🎉')">🎉</button>
         <button onclick="reactToMessage('👏')">👏</button>
+    </div>
+
+    <div class="right-panel" id="right-panel" style="display: none;">
+        <div class="panel-tabs" id="panel-tabs">
+            <button class="rp-tab" onclick="switchTab(this, event)" id="shotsTab" disabled>Screenshots</button>
+            <button class="rp-tab" onclick="switchTab(this, event)" id="facesTab">Registered Faces</button>
+            <button class="close-panel" id="close-panel" onclick="showGallery()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="tab-contents" id="shotsContent" style="display: flex;">
+            {% for shot in screenshots %}
+            <img alt="screenshot taken through the webcam" title="{{shot}}" data-source="/screenshots/{{shot}}"/>
+            {% endfor %}
+        </div>
+        <div class="tab-contents" id="facesContent" style="display: none;">
+            {% for face in known_faces %}
+            <img alt="{{ face.split('/') | last }}" title="{{ face.split('/') | last }}" data-source="/screenshots/{{ face }}"/>
+            {% endfor %}
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>

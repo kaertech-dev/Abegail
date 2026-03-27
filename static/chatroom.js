@@ -15,7 +15,6 @@ let speechRate = 0.9;
 
 const SpeechRecognition = window.SpeechRecognition;
 const recognition = new SpeechRecognition();
-recognition.lang = "en-US";
 recognition.continuous = true;
 recognition.maxAlternatives = 50;
 let sttFlag = false;
@@ -27,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeSettings();
     initializeEventListeners();
     document.getElementById('welcomeTime').innerHTML += getCurrentTime();
-    document.getElementById('messageInput').focus();
+    document.getElementById('chatInput').focus();
     
     // Set font size
     document.documentElement.style.setProperty('--base-font-size', `${fontSize}px`);
@@ -78,24 +77,6 @@ function initializeEventListeners() {
 
     // File upload, trigger after selection
     document.getElementById('file-input').addEventListener('change', uploadFile);
-    document.getElementById('cancel-send').addEventListener('click', cancelFile);
-    document.getElementById("send-file").addEventListener('click', () => {
-        const file_input = document.getElementById('file-input');
-        let formData = new FormData();
-        formData.append('file',file_input.files[0]);
-        
-        fetch('/api/upload', {
-            method: 'POST',
-            body: formData
-        })
-            .then(response => response.json())
-            .then(data => {
-                console.log("Submitted file. ", data);
-                cancelFile();
-            })
-            .catch(error => console.error('Error:', error));
-        
-    });
     
     // Settings panel
     document.getElementById('settingsToggle').addEventListener('click', toggleSettings);
@@ -103,7 +84,7 @@ function initializeEventListeners() {
     
     // Search
     document.getElementById('searchToggle').addEventListener('click', toggleSearch);
-    document.getElementById('searchClose').addEventListener('click', toggleSearch);
+    // document.getElementById('searchClose').addEventListener('click', toggleSearch);
     document.getElementById('searchInput').addEventListener('input', handleSearch);
     
     // Settings controls
@@ -120,6 +101,7 @@ function initializeEventListeners() {
     document.getElementById('fontSizeSlider').addEventListener('input', (e) => {
         fontSize = parseInt(e.target.value);
         document.documentElement.style.setProperty('--base-font-size', `${fontSize}px`);
+        document.documentElement.style.fontSize = fontSize;
         document.getElementById('fontSizeValue').textContent = `${fontSize}px`;
         localStorage.setItem('fontSize', fontSize);
     });
@@ -166,13 +148,18 @@ function toggleSettings() {
 
 function toggleSearch() {
     const searchBar = document.getElementById('searchBar');
-    const isVisible = searchBar.style.display !== 'none';
-    searchBar.style.display = isVisible ? 'none' : 'flex';
-    if (!isVisible) {
+    const searchButton = document.getElementById("searchToggle");
+
+    if (searchBar.style.display === 'none') {
+        searchBar.style.display = 'flex';
+        searchButton.innerHTML = '<i class="fas fa-times"></i>';
         document.getElementById('searchInput').focus();
-    } else {
+    }
+    else if (searchBar.style.display === 'flex') {
         document.getElementById('searchInput').value = '';
         clearSearchResults();
+        searchBar.style.display = 'none';
+        searchButton.innerHTML = '<i class="fas fa-search"></i>';
     }
     playSound('click');
 }
@@ -249,37 +236,98 @@ function handleKeyboardShortcuts(e) {
     if (e.key === 'Escape') {
         document.getElementById('searchBar').style.display = 'none';
         document.getElementById('settingsPanel').style.display = 'none';
+        document.getElementById('right-panel').style.display = 'none';
+        document.getElementById('more-inputs').style.display = 'none';
         hideContextMenu();
-        document.getElementById('messageInput').focus();
+        document.getElementById('chatInput').focus();
     }
     
     // Ctrl+K or Cmd+K: Focus input
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        document.getElementById('messageInput').focus();
+        document.getElementById('chatInput').focus();
     }
 }
 
-function slideTo(pagename) {
-    const centerSlider = document.getElementById('center-piece');
-    const webcam = document.getElementById('pageWebcam');
-    const aichat = document.getElementById('chatMessages');
-    const chart = document.getElementById('pageChart');
+function clickOutInput(e) {
+    if (!e.target.closest('#chatOptions') && !e.target.closest('#more-inputs')) {
+        document.getElementById("more-inputs").style.display = 'none';
+        const optionsButton = document.getElementById("chatOptions");
+        const icon = optionsButton.children[0];
+        icon.style.transform = '';
 
-    if (pagename == 'webcam') {
-        aichat.style.display = 'none';
-        chart.style.display = 'none';
-        webcam.style.display = 'flex';
+        document.removeEventListener('click', clickOutInput);
     }
-    else if (pagename == 'chatroom') {
-        chart.style.display = 'none';
-        webcam.style.display = 'none';
-        aichat.style.display = 'block';
+}
+
+function showMoreInputs() {
+    const optionsButton = document.getElementById("chatOptions");
+    const icon = optionsButton.children[0];
+    
+    const moreInputs = document.getElementById("more-inputs");
+    if (moreInputs.style.display === 'none') {
+        moreInputs.style.display = 'flex';
+        icon.style.transform = 'rotate(45deg)';
+
+        document.addEventListener('click', clickOutInput);
     }
-    else if (pagename == 'chart') {
-        webcam.style.display = 'none';
-        aichat.style.display = 'none';
-        chart.style.display = 'block';
+    else if (moreInputs.style.display === 'flex') {
+        moreInputs.style.display = 'none';
+        icon.style.transform = '';
+
+        document.removeEventListener('click', clickOutInput);
+    }
+}
+
+function saveTranscript() {
+    const full_text = document.getElementById("meeting-transcript").innerText.trim();
+
+    fetch('/webcam/meeting', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            speech2text: full_text
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        // console.log("Saved transcript.");
+        showNotification("Saved transcript.");
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function clearTranscript() {
+    const full_text = document.getElementById("meeting-transcript");
+    full_text.innerText = 'Meeting transcript appears here.';
+    showNotification("Cleared transcript");
+}
+
+const mainGrid = document.getElementById("center-box");
+function toggleWebcam() {
+    const videoUI = document.getElementById("main-video-ui");
+    const chatUI = document.getElementById("chat-messages");
+
+    if (videoUI.style.display == 'none') {
+        mainGrid.classList.add('webcamON');
+        chatUI.classList.add('reduced');
+        setTimeout(() => {
+            videoUI.style.display = 'flex';
+        }, 500);
+
+        document.getElementById("openWebcam").innerHTML = '<i class="fas fa-times"></i>';
+        document.getElementById("openWebcam").style = 'background: var(--bad-button); color: white;'
+    }
+    else if (videoUI.style.display == 'flex') {
+        videoUI.style.display = 'none';
+        mainGrid.classList.remove('webcamON');
+        chatUI.classList.remove('reduced');
+
+        document.getElementById("openWebcam").innerHTML = '<i class="fa-solid fa-video"></i>';
+        document.getElementById("openWebcam").style = 'background: ""; color: ""';
+        document.getElementById("cam-options").style.display = 'none';
     }
 }
 
@@ -314,9 +362,12 @@ function showContextMenu(e, messageBubble) {
 
 function hideContextMenu() {
     document.getElementById('contextMenu').style.display = 'none';
+    document.getElementById("react-items").style.display = 'none';
     selectedMessageId = null;
-    selectedBubble.style.border = "none";
-    selectedBubble = null;
+    if (selectedBubble) {
+        selectedBubble.style.border = "none";
+        selectedBubble = null;
+    }
     document.removeEventListener('click', clickOut);
 }
 
@@ -417,6 +468,7 @@ function showNotification(message, type = 'success') {
 }
 
 function selectFile() {
+    showMoreInputs();
     const fileInput = document.getElementById("file-input");
     fileInput.click();
 }
@@ -425,24 +477,40 @@ function uploadFile() {
     const fileInput = document.getElementById("file-input");
     const filename = fileInput.files[0].name;
 
-    const chatInput = document.getElementById("messageInput");
-    chatInput.style.width = '50px';
+    document.getElementById("statusText").style.display = 'none';
 
-    const sendFile = document.getElementById("send-file");
-    sendFile.innerHTML = "Submit the file: " + filename + "?";
-    sendFile.style.display = "flex";
+    const fileStatus = document.getElementById("attached-file");
+    fileStatus.innerText = `File attached: ${filename}`;
+    document.getElementById("status-file").style.display = 'flex';
+}
 
-    const cancel = document.getElementById("cancel-send");
-    cancel.style.display = "flex";
+function submitFile() {
+    const file_input = document.getElementById('file-input');
+    let formData = new FormData();
+    formData.append('file',file_input.files[0]);
+    
+    fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+    })
+        .then(response => response.json())
+        .then(data => {
+            // console.log("Submitted file.", data);
+            showNotification("Submitted file.");
+            cancelFile();
+        })
+        .catch(error => console.error('Error:', error));
 }
 
 function cancelFile() {
-    const sendFile = document.getElementById("send-file");
-    sendFile.style.display = "none";
-    sendFile.innerHTML = '';
+    const fileStatus = document.getElementById("attached-file");
+    fileStatus.innerText = '';
+    document.getElementById("status-file").style.display = 'none';
 
-    const cancel = document.getElementById("cancel-send");
-    cancel.style.display = "none";
+    const fileInput = document.getElementById("file-input");
+    fileInput.files = null;
+
+    document.getElementById("statusText").style.display = 'block';
 }
 
 async function downloadCSV(filename) {
@@ -502,45 +570,174 @@ function playSound(type) {
     }
 }
 
-
-const speechButton = document.getElementById("recordSpeech");
-function startRecord() {
+const speechButton = document.getElementById("recordSpeech"); //one shot mode
+function startRecordOneShot() {
+    recognition.lang = "en-US";
+    t2speech.cancel();
+    speechButton.innerHTML = '<i class="fa-solid fa-stop"></i>';
     if (sttFlag == false) {
+        recognition.start();
+    }
+    // console.log("One shot speech recog activated.");
+    recognition.addEventListener('result', recogOneShot);
+}
+
+const speechButton2 = document.getElementById("start-transcript"); //continuous mode
+function startRecord() {
+    recognition.lang = "fil-PH";
+    if (sttFlag == false) {
+        recognition.abort();
         t2speech.cancel();
-        speechButton.innerHTML = '<i class="fa-solid fa-stop"></i>';
+        speechButton2.innerHTML = '<i class="fa-solid fa-stop"></i>';
         recognition.start();
         sttFlag = true;
-        console.log("Start speaking...");
+        // console.log("Start speaking...");
+        recognition.addEventListener('result', recogContinuous);
     }
     else {
         recognition.stop();
         sttFlag = false;
-        console.log("Speech recognition stopped.")
-        speechButton.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+        // console.log("Speech recognition stopped.");
+        speechButton2.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+        recognition.removeEventListener('result', recogContinuous);
     }
 }
 
-recognition.addEventListener('result', (event) => {
+const meetingPanel = document.getElementById("meeting-view");
+
+function recogOneShot(event) {
     const stt_result = event.results[event.resultIndex];
     const transcript = stt_result[0].transcript;
-    const confidence = stt_result[0].confidence;
-    console.log(`Transcript: ${transcript} (Confidence: ${Math.round(confidence * 100)}%)`);
+    // const confidence = stt_result[0].confidence;
+    // console.log(`One shot transcript: ${transcript}`);
 
-    const chatInput = document.getElementById("messageInput");
-    current_text = chatInput.value;
+    const chatInput = document.getElementById("chatInput");
+    let current_text = chatInput.value;
     chatInput.value = current_text + " " + transcript;
-});
+
+    setTimeout(() => {
+        sendMessage();
+        // console.log("Message sent.");
+        if (sttFlag == false) {
+            recognition.stop();
+        }
+        speechButton.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+        recognition.removeEventListener('result', recogOneShot);
+    }, 1000);
+}
+
+function recogContinuous(event) {
+    const stt_result = event.results[event.resultIndex];
+    const transcript = stt_result[0].transcript;
+    // const confidence = stt_result[0].confidence;
+    // console.log(`Transcript: ${transcript}`);
+
+    let position = transcript.search(/hey abigail/i);
+    if (position != -1) {
+        document.getElementById("chatInput").focus();
+        recognition.addEventListener('result', recogOneShot);
+    }
+
+    const full_text = document.getElementById("meeting-transcript");
+    let current_text = full_text.innerText;
+    full_text.innerText = current_text + "\n\n" + transcript;
+    // meetingPanel.scrollTop = meetingPanel.scrollHeight;
+    full_text.scrollTop = full_text.scrollHeight;
+}
 
 recognition.onerror = (event) => {
     console.log("STT Error:", event.error);
+    recognition.abort();
+    speechButton.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+    speechButton2.innerHTML = '<i class="fa-solid fa-microphone"></i>';
 }
 
-recognition.onspeechend = () => {
-    setTimeout(() => {}, 3000);
-    recognition.stop();
-    console.log("Speech recognition stopped.");
-    sendMessage();
-};
+function sendAudio(chunks) {
+    const formData = new FormData();
+    const audioBlob = new Blob(chunks, {type: "audio/webm"});
+    let timestamp = Date.now().toString();
+    formData.append('audioRecog', audioBlob, `recording_${timestamp.slice(4)}.webm`);
+    
+    fetch('/webcam/meeting', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        // console.log("Submitted file. ", data);
+        console.log(data.speakerName);
+        console.log(data.confidence);
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+const addVoice = document.getElementById("addVoice");
+const speakerIDtest = document.getElementById("camMeeting");
+let audioFlag = false;
+let trainFlag = false;
+
+if (navigator.mediaDevices.getUserMedia) {
+    // console.log("The mediaDevices.getUserMedia() method is supported.");
+    const constraints = {audio: true};
+    let chunks = [];
+
+    let onSuccess = function (stream) {
+        const options = {mimeType: "audio/webm; codecs=opus", audioBitsPerSecond: 128000, };
+        const mediaRecorder = new MediaRecorder(stream, options);
+
+        addVoice.onclick = function () {
+            trainFlag = true;
+            if (audioFlag == false) {
+                mediaRecorder.start();
+                // console.log("Recording started.");
+                audioFlag = true;
+            }
+            else if (audioFlag == true) {
+                mediaRecorder.stop();
+                // console.log("Recording stopped.");
+                audioFlag = false;
+            }
+        };
+
+        mediaRecorder.onstop = function (e) {
+            if (trainFlag === true) {
+                const clipName = prompt("Enter your name", "unnamed");
+                const formData = new FormData();
+                const audioBlob = new Blob(chunks, {type: "audio/webm"});
+                chunks = [];
+                formData.append('audioTrain', audioBlob, `${clipName}.webm`);
+                
+                fetch('/webcam/meeting', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // console.log("Submitted file. ", data);
+                })
+                .catch(error => console.error('Error:', error));
+            }
+            else if (trainFlag === false) {
+                sendAudio(chunks);
+                chunks = [];
+            }
+            
+        };
+
+        mediaRecorder.ondataavailable = function (e) {
+            chunks.push(e.data);
+        };
+    };
+
+    let onError = function (err) {
+        console.log("The following error occured:", err);
+    };
+
+    navigator.mediaDevices.getUserMedia(constraints).then(onSuccess, onError);
+}
+else {
+    console.log("getUserMedia() not supported on your browser.");
+}
 
 // let utterance = '';
 const voiceList = document.getElementById("voice-list");
@@ -570,7 +767,8 @@ voiceList.addEventListener('change', (e) => {
     for (let voice of voices) {
         if (voice.name == e.target.value) {
             selectedVoice = voice;
-            console.log("Changed voice to: ", selectedVoice.name);
+            // console.log("Changed voice to: ", selectedVoice.name);
+            showNotification(`Changed voice to: ${selectedVoice.name}`);
             break;
         }
     }
@@ -592,8 +790,8 @@ function textToSpeech() {
     const messageBubble = selectedBubble;
     if (messageBubble) {
         t2speech.cancel();
-        const bubble = messageBubble.querySelector('.bubble');
-        const text = bubble.textContent.trim();
+        // const bubble = messageBubble.querySelector('.bubble');
+        const text = messageBubble.textContent.trim();
         speak(text);
     }
     
@@ -601,7 +799,7 @@ function textToSpeech() {
 }
 
 function addMessage(message, isUser = false, metadata = {}) {
-    const messagesContainer = document.getElementById('chatMessages');
+    const messagesContainer = document.getElementById('chat-messages');
     const messageDiv = document.createElement('div');
     messageDiv.className = `message-bubble ${isUser ? 'user' : 'bot'}`;
     messageDiv.dataset.messageId = metadata.id || `msg_${Date.now()}_${Math.random()}`;
@@ -652,6 +850,14 @@ function addMessage(message, isUser = false, metadata = {}) {
             console.warn('Markdown parsing failed:', e);
         }
     }
+
+    let msgFooter = isUser ? `
+        ${metadata.timestamp || getCurrentTime()} ${badges}
+        <div class="reactions" id="chatReact"></div>
+    ` : `
+        <div class="reactions" id="chatReact"></div>
+        ${metadata.timestamp || getCurrentTime()} ${badges}
+    `;
     
     messageDiv.innerHTML = `
         <div class="message-content">
@@ -662,8 +868,7 @@ function addMessage(message, isUser = false, metadata = {}) {
                     ${csvButton}
                 </div>
                 <div class="timestamp">
-                    <div class="reactions" id="chatReact"></div>
-                    ${metadata.timestamp || getCurrentTime()} ${badges}
+                    ${msgFooter}
                 </div>
             </div>
         </div>
@@ -791,7 +996,7 @@ function cancelEdit(messageId) {
 }
 
 function showTypingIndicator() {
-    const messagesContainer = document.getElementById('chatMessages');
+    const messagesContainer = document.getElementById('chat-messages');
     const typingDiv = document.createElement('div');
     typingDiv.className = 'message-bubble bot';
     typingDiv.id = 'typingIndicator';
@@ -831,16 +1036,16 @@ function escapeHtml(text) {
 }
 
 async function sendMessage() {
-    if (sttFlag) {
-        recognition.stop();
-        sttFlag = false;
-        console.log("Speech recognition stopped.")
-        speechButton.innerHTML = '<i class="fa-solid fa-microphone"></i>';
-    }
+    // if (sttFlag) {
+    //     recognition.stop();
+    //     sttFlag = false;
+    //     console.log("Speech recognition stopped.");
+    //     speechButton.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+    // }
     
     t2speech.cancel();
-    const input = document.getElementById('messageInput');
-    const sendButton = document.getElementById('sendButton');
+    const input = document.getElementById('chatInput');
+    const sendButton = document.getElementById('chatSend');
     const message = input.value.trim();
     
     if (!message) return;
@@ -915,7 +1120,7 @@ async function clearChat() {
             })
         });
         
-        const messagesContainer = document.getElementById('chatMessages');
+        const messagesContainer = document.getElementById('chat-messages');
         messagesContainer.innerHTML = `
             <div class="message-bubble bot">
                 <div class="message-content">
@@ -987,6 +1192,7 @@ async function exportChat() {
 const feedStatus = document.getElementById("feedStatus");
 const feedIcon = document.getElementById("toggleFeed");
 const videoFeed = document.getElementById("live-feed");
+const takeShot = document.getElementById("camScreenshot");
 const toggleRecognition = document.getElementById("toggleRecognition");
 const recogStatus = document.getElementById("recogStatus");
 
@@ -995,14 +1201,13 @@ function toggleFeed() {
         feedStatus.checked = false;
         feedIcon.innerHTML = '<i class="fa-solid fa-video"></i>';
         feedIcon.title = "Enable video feed";
-        videoFeed.style.height = '0';
-        // ellipseOverlay.style.display = 'none';
+        videoFeed.style.opacity = '0';
     }
     else if (feedStatus.checked == false) {
         feedStatus.checked = true;
         feedIcon.innerHTML = '<i class="fa-solid fa-video-slash"></i>';
         feedIcon.title = "Disable video feed";
-        videoFeed.style.height = '480px';
+        videoFeed.style.opacity = '1';
     }
     
     fetch('/webcam_update', {
@@ -1017,12 +1222,11 @@ function toggleFeed() {
     .then(response => response.json())
     .then(data => {
         // console.log("Video feed:", feedStatus.checked);
-        // Wait 5 seconds before enabling/disabling the buttons
+        // Wait 3 seconds before enabling/disabling the buttons
         setTimeout(function(){
-            takeShot.disabled = takeShot.disabled ? false : true;
-            toggleRecognition.disabled = toggleRecognition.disabled ? false : true;
-            // addFace.disabled = addFace.disabled ? false : true;
-        }, 5000);
+            takeShot.disabled = feedStatus.checked ? false : true;
+            toggleRecognition.disabled = feedStatus.checked ? false : true;
+        }, 2000);
     })
     .catch(error => console.error('Error:', error));
 };
@@ -1042,7 +1246,8 @@ function screenShot() {
     })
     .then(response => response.json())
     .then(data => {
-        console.log("Screenshot taken.");
+        // console.log("Screenshot taken.");
+        showNotification("Screenshot taken.");
         flash.style.display = 'none';
         // if (data.img_src) {
             // shotsHTML = shotsContent.innerHTML;
@@ -1053,9 +1258,176 @@ function screenShot() {
     .catch(error => console.error('Error:', error));
 }
 
+const ellipseOverlay = document.getElementById("registerOverlay");
+const controlOverlay = document.getElementById("confirmBox");
+const captureButton = document.getElementById("registerCapture");
+const takeCancel = document.getElementById("retakeFace");
+const submitFace = document.getElementById("submitFace");
+const nameInput = document.getElementById("nameField");
+
+// Shows/hides the overlay for face registration
+function toggleOverlay() {
+    moreSettings.style.display = 'none';
+    if (ellipseOverlay.style.display == 'none') {
+        ellipseOverlay.style.display = 'flex';
+        controlOverlay.style.display = 'none';
+    }
+    else if (ellipseOverlay.style.display == 'flex') {
+        ellipseOverlay.style.display = 'none';
+    }
+};
+
+// Freezes the frame for the user to review
+captureButton.addEventListener('click', () => {
+    controlOverlay.style.display = 'flex';
+    ellipseOverlay.style.display = 'none';
+
+    fetch('/webcam_update', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            freezeFrame: true
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        // console.log("Freeze frame.");
+        document.getElementById("cam-controls").style.display = 'none';
+    })
+    .catch(error => console.error('Error:', error));
+});
+
+// Cancel freeze and go back to ellipse overlay
+takeCancel.addEventListener('click', () => {
+    toggleOverlay();
+
+    fetch('/webcam_update', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            freezeFrame: false
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        // console.log("Unfreeze frame.");
+        document.getElementById("cam-controls").style.display = 'flex';
+    })
+    .catch(error => console.error('Error:', error));
+});
+
+// Submit image and name, then remove all overlays
+submitFace.addEventListener('click', () => {
+    if (nameInput.value !== '') {
+        fetch('/webcam_update', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                submitName: nameInput.value
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById("cam-controls").style.display = 'flex';
+            controlOverlay.style.display = 'none';
+            // if (data.img_src) {
+            //     facesHTML = facesContent.innerHTML;
+            //     img_alt = "' alt='" + data.img_src.slice(13) + "'/>";
+            //     facesContent.innerHTML = "<img src='/screenshots/" + data.img_src + img_alt + facesHTML;
+            // }
+        })
+        .catch(error => console.error('Error:', error));
+    }
+    else {
+        nameInput.focus();
+    }
+});
+
+const moreSettings = document.getElementById("cam-options");
+function clickOutCam(e) {
+    if (!e.target.closest("#cam-options") && !e.target.closest("#camOptions")) {
+        moreSettings.style.display = 'none';
+        document.removeEventListener('click', clickOutCam);
+    }
+}
+
+function showSettings() {
+    if (moreSettings.style.display == 'none') {
+        moreSettings.style.display = 'flex';
+        document.addEventListener('click', clickOutCam);
+    }
+    else if (moreSettings.style.display == 'flex') {
+        moreSettings.style.display = 'none';
+        document.removeEventListener('click', clickOutCam);
+    }
+}
+
+// Show/hide gallery (right panel)
+const gallery = document.getElementById("right-panel");
+const shotsContent = document.getElementById("shotsContent");
+const facesContent = document.getElementById("facesContent");
+let loadedFlag = false;
+function loadImages() {
+    
+}
+
+function showGallery() {
+    if (loadedFlag == false) {
+        loadImages();
+        loadedFlag = true;
+    }
+
+    moreSettings.style.display = 'none';
+    if (gallery.style.display == 'none') {
+        gallery.style.display = 'block';
+        // document.addEventListener('click', clickOutside);
+    }
+    else if (gallery.style.display == 'block') {
+        gallery.style.display = 'none';
+        // document.removeEventListener('click', clickOutside);
+    }
+}
+
+// Change tab on right panel
+function switchTab(element, event) {
+    const shotsTab = document.getElementById("shotsTab");
+    const facesTab = document.getElementById("facesTab");
+
+    if (element.id == 'facesTab') {
+        shotsTab.disabled = false;
+        shotsContent.style.display = "none";
+
+        facesTab.disabled = true;
+        facesContent.style.display = "flex";
+    }
+    else if (element.id == 'shotsTab') {
+        facesTab.disabled = false;
+        facesContent.style.display = "none";
+
+        shotsTab.disabled = true;
+        shotsContent.style.display = "flex";
+    }
+}
+
+function toggleMeeting() {
+    const meetingPanel = document.getElementById('meeting-view');
+    if (meetingPanel.style.display == 'none') {
+        meetingPanel.style.display = 'flex';
+    }
+    else if (meetingPanel.style.display == 'flex') {
+        meetingPanel.style.display = 'none';
+    }
+}
+
 function startFaceRecog() {
     recogStatus.checked = true;
-    console.log("Face Recognition start.");
+    // console.log("Face Recognition start.");
     toggleRecognition.style.background = 'rgb(177 63 63)';
     toggleRecognition.title = 'Disable facial recognition';
 
@@ -1110,9 +1482,9 @@ function toggleRecog() {
 const fileDrop = document.getElementById("file_dropdown");
 let myChart = null;
 function populateDropdown() {
-    const response = fetch('/getcharts');
+    // const response = fetch('/get_charts');
 
-    fetch('/getcharts')
+    fetch('/get_charts')
     .then(response => response.json())
     .then(data => {
         const list = data.charts;
@@ -1146,7 +1518,7 @@ fileDrop.addEventListener('change', async () => {
         myChart.destroy();
     }
     let valuesArray = await parseCsv(filename);
-    console.log("array:", valuesArray);
+    // console.log("array:", valuesArray);
     const chartName = valuesArray[0];
     const chartData = valuesArray[1];
     const labels = valuesArray[2];
@@ -1261,4 +1633,4 @@ style.textContent = `
         }
     }
 `;
-document.head.appendChild(style);
+// document.head.appendChild(style);

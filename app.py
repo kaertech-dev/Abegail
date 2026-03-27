@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, date
 import os
 import re
 import csv
+import numpy as np
 import socket
 import traceback
 
@@ -21,6 +22,10 @@ from session_manager import get_session_manager
 # from attendance_routes import handle_attendance_query
 # from database_routes import handle_database_query
 
+import base64
+from speaker_recognition.recognizer import recognizer
+from speaker_recognition.models import TrainingRequest, VoiceSample, AudioInput, RecognitionRequest
+
 from mcp_activity_client import handle_activity_query_via_mcp
 from mcp_attendance_client import handle_attendance_query_via_mcp
 
@@ -32,6 +37,8 @@ CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST"]}})
 
 DEFAULT_DATABASE = "operators"
 CSV_BASE_PATH = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/csv_files/"
+AUDIO_PATH = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/voices_trained/"
+TRANSCRIPT_PATH = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/speechlogs/"
 
 def get_local_ip():
     """Get local IP address"""
@@ -48,7 +55,20 @@ def new_index():
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    screenshots = []
+    with os.scandir('webcam') as d:
+        for e in d:
+            if e.name[-4:] == '.jpg':
+                screenshots.append(f"webcam/{e.name}")
+    screenshots.reverse()
+    
+    known_faces = []
+    with os.scandir('known_faces') as f:
+        for g in f:
+            if g.name[-4:] == '.jpg':
+                known_faces.append(f"known_faces/{g.name}")
+    
+    return render_template('index.html', screenshots=screenshots, known_faces=known_faces)
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -247,7 +267,7 @@ def test_database():
 def homepage():
     return render_template('chartjs-example.html')
 
-@app.route('/getcharts', methods=['GET'])
+@app.route('/get_charts', methods=['GET'])
 def giveChart():
     BASE_PATH = os.getcwd()
     fileList = []
@@ -306,12 +326,23 @@ def cam_base():
 
     return render_template('webcam.html', screenshots=screenshots, known_faces=known_faces)
 
-# @app.route('/webcam_get')
+# @app.route('/get_images')
 # def get_status():
-#     """Used for initializing the toggle switches"""
-#     status = camera.toggleBox
-#     print("Current state: ", status)
-#     return jsonify({"status": status})
+#     """Used for loading images"""
+#     screenshots = []
+#     with os.scandir('webcam') as d:
+#         for e in d:
+#             if e.name[-4:] == '.jpg':
+#                 screenshots.append(f"webcam/{e.name}")
+#     screenshots.reverse()
+    
+#     known_faces = []
+#     with os.scandir('known_faces') as f:
+#         for g in f:
+#             if g.name[-4:] == '.jpg':
+#                 known_faces.append(f"known_faces/{g.name}")
+    
+#     return jsonify({"known_faces": known_faces, "screenshots": screenshots})
 
 @app.route('/webcam_update', methods=['POST'])
 def update_status():
@@ -352,24 +383,48 @@ def serve_img(filename):
 def log_speech2text():
     if request.is_json:
         data = request.get_json()
-        transcript = data.get('speech2text', '')
-        with open('speechRecogLogs.txt', 'a') as txt_file:
-            new_text = f"[{datetime.now().strftime("%d/%b/%Y %H:%M:%S")}] - - {transcript} \n"
-            txt_file.write(new_text)
-        
-        # if "faceRecog" in data and data["faceRecog"] == True:
-        #     if not camera.recogEnable:
-        #         camera.recogEnable = True
-        #     try:
-        #         last_append = list(face_logs.values())[-1]
-        #         print("last append: ", last_append)
-        #     except:
-        #         last_append = ''
-        #     return jsonify({"success": True, "names": last_append}), 200
-        # elif data["faceRecog"] == False:
-        #     camera.recogEnable = False
-
+        if 'speech2text' in data:
+            transcript = data.get('speech2text', '')
+            curr_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            full_path = os.path.join(TRANSCRIPT_PATH, f'transcript_{curr_date}.txt')
+            with open(full_path, 'w') as txt_file:
+                txt_file.write(transcript)
         return jsonify({"success": True}), 200
+    
+    elif 'audioTrain' in request.files:
+        audio_file = request.files['audioTrain']
+        # print("To train: ", audio_file)
+        filename = secure_filename(audio_file.filename)
+        audio_file.save(os.path.join(AUDIO_PATH, filename))
+
+        with open(f"voices_trained/{filename}", "rb") as raw_audio:
+            base64_audio = base64.b64encode(raw_audio.read()).decode('utf-8')
+
+        name = filename.split('.webm')
+        audio_input = AudioInput(audio_data=base64_audio, sample_rate=16000)
+        samples=[VoiceSample(user=name[0], audio=audio_input)]
+        trainResult = recognizer.train(TrainingRequest(voice_samples=samples))
+        # print(trainResult)
+        audio_input = None
+        base64_audio = None
+        return jsonify({"success": True}), 200
+    
+    elif 'audioRecog' in request.files:
+        audio_file = request.files['audioRecog']
+        # print("To recognize: ", audio_file)
+        filename = secure_filename(audio_file.filename)
+        audio_file.save(os.path.join(AUDIO_PATH, filename))
+
+        with open(f"voices_trained/{filename}", "rb") as raw_audio:
+            base64_audio = base64.b64encode(raw_audio.read()).decode('utf-8')
+        
+        audio_input = AudioInput(audio_data=base64_audio, sample_rate=16000)
+        recogResult = recognizer.recognize(RecognitionRequest(audio=audio_input))
+        # print(recogResult)
+        audio_input = None
+        base64_audio = None
+        return jsonify({"success": True, "speakerName": recogResult.user_id, "confidence": recogResult.confidence}), 200
+
     else:
         return jsonify({"success": False, "message": "Request body must be JSON."}), 400
     
@@ -440,7 +495,21 @@ def print_startup_banner():
    - "search all for KE0152"
 {'='*70}
 """)
+    
+def load_voice_embeddings():
+    recognizer._reference_embeddings = {}
+    with os.scandir('./embeddings') as fileIter:
+        for file in fileIter:
+            user_id = file.name.split('_')[0]
+            
+            loaded_data = np.load(file.path, allow_pickle=False)
+            embedding = np.asarray(loaded_data)
+    
+            recognizer._reference_embeddings[user_id] = embedding
+        recognizer._is_trained = True
+    print("Voice embeddings loaded from cache.")
 
 if __name__ == '__main__':
     print_startup_banner()
+    load_voice_embeddings()
     app.run(debug=False, host='0.0.0.0', port=8080, threaded=True)

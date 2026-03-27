@@ -164,7 +164,7 @@ def query_processor_LLM(question: str):
 List of tools: {{individual_attendance, department_headcount, latest_entries}}.
 Choose the best tool that would be used to address the question, and determine the employee name whose attendance is being asked. If the query is not related to attendance, output 'not_attendance'.
 
-Example: {{"query": "Check Ranbill attendance", "response": "Tool=individual_attendance Employee=Ranbill"}}
+Examples: {{"query": "Check Ranbill attendance", "response": "Tool=individual_attendance Employee=Ranbill"}}, {{"query": "What are the latest attendance records?", "response": "Tool=latest_entries Employee=None"}}
 
 Answer:
 Tool=

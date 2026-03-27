@@ -43,13 +43,12 @@ body {
     overflow: hidden;
 }
 
-.cube {
+/* .cube {
     position: absolute;
     font-size: 4em;
     width: 4em;
     height: 4em;
     transform-style: preserve-3d;
-    /* transform: rotateX(-30deg) rotateY(-45deg); */
     transition: transform 0.7s;
     z-index: 2;
 }
@@ -73,7 +72,6 @@ body {
 .right {background: rgb(189, 188, 188); transform: rotateY(90deg) translateZ(2em);}
 .left {background: rgb(189, 188, 188); transform: rotateY(-90deg) translateZ(2em);}
 .bottom {background: rgb(189, 188, 188); transform: rotateX(-90deg) translateZ(2em);}
-/* .back {transform: rotateY(-180deg) translateZ(2em);} */
 
 .texts {
     position: absolute;
@@ -85,11 +83,9 @@ body {
     height: 80vh;
     text-align: center;
     font-size: 1.2em;
-    /* background: gray; */
 }
 
 .texts > div {
-    /* background: transparent; */
     color: var(--text-primary);
 }
 
@@ -110,4 +106,116 @@ body {
 .texts > #b {
     grid-area: b;
     padding-top: 30px;
+} */
+
+.center-box {
+    background: var(--primary-color);
+    height: 90vh;
+    width: 1200px;
+    border-radius: 20px;
+    display: grid;
+    grid-template-areas: 'buttons chat' 'webcam chat';
+    grid-template-rows: 125px auto;
+    grid-template-columns: 650px auto;
+    /* grid-template-rows: 125px auto; */
+    /* grid-template-columns: 60px 700px; */
+}
+
+.center-box button {
+    background: white;
+    border: none;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+}
+
+.center-box button:hover {
+    background: gray;
+}
+
+.center-box button:active {
+    transform: scale(0.95);
+}
+
+.main-buttons {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin: 10px 0 10px 10px;
+    grid-area: buttons;
+}
+
+.right-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.main-video-ui {
+    padding: 10px 0 10px 15px;
+    grid-area: webcam;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.video-feed {
+    background: white;
+    height: 480px;
+    width: 640px;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.cam-controls {
+    display: flex;
+    justify-content: space-evenly;
+}
+
+.cam-controls button {
+    width: 90px;
+    height: 40px;
+    border-radius: 20px;
+}
+
+.meeting-transcript {
+    background: white;
+    flex: 1;
+    border-radius: 10px;
+}
+
+.main-chat-ui {
+    padding: 10px;
+    grid-area: chat;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    width: 500px;
+    /* width: 700px; */
+}
+
+.chat-messages {
+    background: white;
+    border-radius: 10px;
+    width: 100%;
+    flex: 1;
+}
+
+.chat-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.chat-controls input[type="text"] {
+    flex: 1;
+    font-size: 14px;
+    border-radius: 30px;
+    border: none;
+    outline: none;
+}
+
+.chat-controls input[type="text"]:focus {
+    border: 2px solid greenyellow;
 }

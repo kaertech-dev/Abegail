@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="texts">
+    <!-- <div class="texts">
         <div id="t" onmouseenter="onHover('top')" onmouseout="outHover(event)" onclick="goTo('top')">Abegail Chatbot</div>
         <div id="l" onmouseenter="onHover('left')" onmouseout="outHover(event)" onclick="goTo('left')">Webcam</div>
         <div id="r" onmouseenter="onHover('right')" onmouseout="outHover(event)" onclick="goTo('right')">Chart Viewer</div>
@@ -20,50 +20,81 @@
         <div class="side left"></div>
         <div class="side top"></div>
         <div class="side bottom"></div>
+    </div> -->
+    <div class="center-box" id="center-box">
+        <div class="main-buttons" id="main-buttons">
+            <div class="left-buttons" id="left-buttons">
+                <button id="closeWebcam">Close</button>
+            </div>
+            <div class="right-buttons" id="right-buttons">
+                <button id="mainSettings">Settings</button>
+                <button id="mainSearch">Search</button>
+                <button id="mainWebcam">Webcam</button>
+            </div>
+        </div>
+        <div class="main-video-ui" id="main-video-ui">
+            <div class="video-feed" id="video-feed">
+                img here
+                <div class="flash" id="flash"></div>
+            </div>
+            <div class="cam-controls" id="cam-controls">
+                <button id="camGallery">Gallery</button>
+                <button id="camScreenshot">Screenshot</button>
+                <button id="camOptions">More Options</button>
+            </div>
+            <div class="meeting-transcript" id="meeting-transcript">
+                <p>meeting transcript here</p>
+            </div>
+        </div>
+        <div class="main-chat-ui" id="main-chat-ui">
+            <div class="chat-messages" id="chat-messages">chat here</div>
+            <div class="chat-controls" id="chat-controls">
+                <button id="chatOptions">+</button>
+                <input type="text" id="chatInput">
+                <button id="chatSend">Send</button>
+            </div>
+        </div>
     </div>
 
     <script>
-        const theCube = document.getElementById("cube");
-        const textTop = document.getElementById("t");
-        const textLeft = document.getElementById("l");
-        const textRight = document.getElementById("r");
-        const textBottom = document.getElementById("b");
-        function onHover(side) {
-            if (side == 'top') {
-                theCube.style.transform = "rotateX(-5deg)";
-                textTop.style.background = 'linear-gradient(0, #4581487d, transparent)';
-            }
-            else if (side == 'left') {
-                theCube.style.transform = "rotateY(5deg)";
-                textLeft.style.background = 'linear-gradient(270deg, #4581487d, transparent)';
-            }
-            else if (side == 'right') {
-                theCube.style.transform = "rotateY(-5deg)";
-                textRight.style.background = 'linear-gradient(90deg, #4581487d, transparent)';
-            }
-            else if (side == 'bottom') {
-                theCube.style.transform = "rotateX(5deg)";
-                textBottom.style.background = 'linear-gradient(180deg, #4581487d, transparent)';
-            }
-        }
-        function outHover(event) {
-            theCube.style.transform = "rotateX(0) rotateY(0)";
-            event.target.style.background = "transparent";
-        }
-        function goTo(side) {
-            if (side == 'top') {
-                window.open("/");
-            }
-            else if (side == 'left') {
-                window.open("webcam");
-            }
-            else if (side == 'right') {
-                window.open("chart/Vivares_2026-02-09_2026-02-22.csv");
-            }
-            // else if (side == 'bottom') {
-            //     window.open("webcam");
-            // }
-        }
+        // const theCube = document.getElementById("cube");
+        // const textTop = document.getElementById("t");
+        // const textLeft = document.getElementById("l");
+        // const textRight = document.getElementById("r");
+        // const textBottom = document.getElementById("b");
+        // function onHover(side) {
+        //     if (side == 'top') {
+        //         theCube.style.transform = "rotateX(-5deg)";
+        //         textTop.style.background = 'linear-gradient(0, #4581487d, transparent)';
+        //     }
+        //     else if (side == 'left') {
+        //         theCube.style.transform = "rotateY(5deg)";
+        //         textLeft.style.background = 'linear-gradient(270deg, #4581487d, transparent)';
+        //     }
+        //     else if (side == 'right') {
+        //         theCube.style.transform = "rotateY(-5deg)";
+        //         textRight.style.background = 'linear-gradient(90deg, #4581487d, transparent)';
+        //     }
+        //     else if (side == 'bottom') {
+        //         theCube.style.transform = "rotateX(5deg)";
+        //         textBottom.style.background = 'linear-gradient(180deg, #4581487d, transparent)';
+        //     }
+        // }
+        // function outHover(event) {
+        //     theCube.style.transform = "rotateX(0) rotateY(0)";
+        //     event.target.style.background = "transparent";
+        // }
+        // function goTo(side) {
+        //     if (side == 'top') {
+        //         window.open("/");
+        //     }
+        //     else if (side == 'left') {
+        //         window.open("webcam");
+        //     }
+        //     else if (side == 'right') {
+        //         window.open("chart/Vivares_2026-02-09_2026-02-22.csv");
+        //     }
+        // }
     </script>
 </body>
 </html>
