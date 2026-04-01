@@ -11,7 +11,7 @@ import socket
 import traceback
 
 from db_handler import get_db_handler
-from ai_handler import ask_general_question, query_processor_LLM
+from ai_handler import ask_general_question, ask_with_file_parse
 from quick_responses import check_quick_response, learn_from_conversation
 from context_manager import get_context_manager
 from knowledge_base import get_knowledge_base
@@ -68,6 +68,8 @@ def index():
             if g.name[-4:] == '.jpg':
                 known_faces.append(f"known_faces/{g.name}")
     
+    ip_addr = request.remote_addr
+    
     return render_template('index.html', screenshots=screenshots, known_faces=known_faces)
 
 @app.route('/api/upload', methods=['POST'])
@@ -104,6 +106,9 @@ def chat():
         # debug command parser here
         if 'launch camera' in message:
             return jsonify({'redirect': 'webcam', 'msg_type': 'bot', 'message': 'Launching video feed...'}), 302
+        
+        message = message.replace('abigail', 'abegail')
+        message = message.replace('Abigail', 'Abegail')
         
         # Initialize managers
         session_mgr = get_session_manager()
@@ -176,7 +181,10 @@ def chat():
         # Default: General AI response
         if not result:
             # wrap message in a prompt??? '<user_name> is asking: <message>'
-            result = ask_general_question("Current query: " + message, relevant_context, current_session.user_name)
+            if ".csv" in message and os.path.exists(f'./csv_files/{message}'):
+                result = ask_with_file_parse(message)
+            else:
+                result = ask_general_question("Current query: " + message, relevant_context, current_session.user_name)
         
         # Create and add bot message
         csv_filename = result.get('csv_file', '')

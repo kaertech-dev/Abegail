@@ -169,7 +169,7 @@ def perform_facial_recognition(
             continue
 
         # detection_logger(target_label)
-        face_names.append(target_label)
+        face_names.append(target_label.replace('.jpg', ''))
 
         img = overlay_identified_face(
             img=img,

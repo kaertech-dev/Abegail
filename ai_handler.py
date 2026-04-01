@@ -4,13 +4,15 @@ import os
 import re
 import csv
 import spacy
+from datetime import date
 from typing import List, Optional, Dict, Any
 from date_parser import extractDate
 from mcp_activity_server import ActivityAPI
 from mcp_attendance_client import get_attendance_service
 from mcp_attendance_server import AttendanceDB
 
-DEFAULT_MODEL = 'deepseek-r1:14b'
+# DEFAULT_MODEL = 'deepseek-r1:14b'
+DEFAULT_MODEL = 'deepseek-r1:8b'
 
 path_name = './csv_files/'
 filename = ''
@@ -162,14 +164,14 @@ def query_processor_LLM(question: str):
     ai_input = f"""{question}
 
 List of tools: {{individual_attendance, department_headcount, latest_entries}}.
-Choose the best tool that would be used to address the question, and determine the employee name whose attendance is being asked. If the query is not related to attendance, output 'not_attendance'.
+I want to filter attendance records from database. What is the the best tool that would allow me to achieve that goal? And for which employee? If the query is not related to attendance, output 'not_attendance'.
 
-Examples: {{"query": "Check Ranbill attendance", "response": "Tool=individual_attendance Employee=Ranbill"}}, {{"query": "What are the latest attendance records?", "response": "Tool=latest_entries Employee=None"}}
+Examples: (Question: "Check Ranbill attendance", Answer: "Tool=individual_attendance Employee=Ranbill"), (Question: "What are the latest attendance records?", Answer: "Tool=latest_entries Employee=None")
 
 Answer:
 Tool=
 Employee="""
-    ai_response = handler_deepseek(ai_input, 'deepseek-r1:7b')
+    ai_response = handler_deepseek(ai_input, 'deepseek-r1:1.5b')
     print(ai_response)
     return ai_response
 
@@ -263,25 +265,6 @@ def ask_general_question(question: str, context: Optional[List], default_name: O
     
     context_section = f" Recent conversation: {context}\n" if context else ""
     # print(context_section)
-
-    if ".csv" in question and os.path.exists(question):
-        filename = question
-        text_input = ''
-        with open(filename, 'r') as file:
-            text_input = csv.reader(file)
-        
-        full_prompt = f"""
-File contents: {text_input}
-
-Instructions:
-Give a detailed summary of the file contents.
-Be informative, concise, and friendly.
-
-Answer:"""
-
-        result = handler_deepseek(full_prompt)
-
-        return {'answer': result, 'response_type': 'general'}
     
     handler_response = {}
     filename = ''
@@ -304,7 +287,7 @@ Answer:"""
         mcp_section = ''
     
     # >>>> separate prompts for activity and general
-    full_prompt = f"""You are Abegail, an AI assistant for monitoring attendance and manufacturing activity. You can also answer queries about non-company matters.
+    full_prompt = f"""You are Abegail, an AI assistant for monitoring attendance and manufacturing activity. You can also answer queries about general information.
 
 {context_section}
 {mcp_section}
@@ -321,6 +304,31 @@ Answer:"""
     result = handler_deepseek(full_prompt)
 
     return {'answer': result, 'csv_file': filename, 'response_type': query_type}
+
+def ask_with_file_parse(question: str):
+    list_entries = []
+    with open(f'./csv_files/{question}', 'r') as file:
+        for line in csv.DictReader(file):
+            list_entries.append(line)
+        
+    full_prompt = f"""
+File contents: {list_entries}
+
+Instructions:
+Give a detailed summary of the file contents.
+Be informative, concise, and friendly.
+
+Answer:"""
+
+    result = handler_deepseek(full_prompt)
+
+    name_parts = question.replace('.csv', '').split('_')
+    converted_date = date.fromisoformat(name_parts[1])
+    if len(name_parts) > 2 and converted_date:
+        return {'answer': result, 'response_type': 'chart'}
+    else:
+        return {'answer': result, 'response_type': 'general'}
+
 
 def _build_reasoning_context(question: str, query_analysis: Optional[Dict]) -> str:
     """Build context to help AI understand the query better"""

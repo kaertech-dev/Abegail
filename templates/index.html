@@ -15,9 +15,6 @@
             <i class="fas fa-moon"></i>
         </button>
         <div id="moreSettings" class="more-settings"></div>
-        <button id="camGallery" onclick="showGallery()" title="Show gallery">
-            <i class="fa-regular fa-image"></i>
-        </button>
     </div>
 
     <!-- Pop-up Buttons -->
@@ -45,7 +42,7 @@
                 Face Recognition
             </button>
             <button id="camMeeting" onclick="toggleMeeting()" title="Live transcription">
-                Meeting Mode
+                Live Transcription
             </button>
         </div>
 
@@ -54,16 +51,22 @@
     
     <!-- Main interface -->
     <div class="center-box" id="center-box">
+        <!-- <div class="cam-buttons" id="cam-buttons" style="display: none;">
+            <button id="camGallery" onclick="showGallery()" title="Show gallery">
+                <i class="fa-regular fa-image"></i>
+            </button>
+        </div> -->
         <div class="main-buttons" id="main-buttons">
             <div class="right-buttons" id="right-buttons">
                 <button id="openWebcam" title="Open webcam window" onclick="toggleWebcam()">
                     <i class="fa-solid fa-video"></i>
                 </button>
-                <button id="settingsToggle" title="Settings" title="Open settings">
+                <button id="settingsToggle" title="Settings">
                     <i class="fas fa-cog"></i>
                 </button>
-                <button id="searchToggle" title="Search messages (Ctrl+F)" style="anchor-name: --search-button;">
+                <button id="searchToggle" title="Search messages (Ctrl+F)" onclick="toggleSearch()" style="anchor-name: --search-button;">
                     <i class="fas fa-search"></i>
+                    <i class="fas fa-times" style="display: none;"></i>
                 </button>
             </div>
             <div class="chat-header">
@@ -90,9 +93,12 @@
                 <button class="button-register" id="retakeFace">Retake</button>
             </div>
             <div class="cam-controls" id="cam-controls">
-                <input type="checkbox" id="feedStatus" checked/>
+                <!-- <input type="checkbox" id="feedStatus" checked/>
                 <button id="toggleFeed" onclick="toggleFeed()" title="Disable video">
                     <i class="fa-solid fa-video-slash"></i>
+                </button> -->
+                <button id="camGallery" onclick="showGallery()" title="Show gallery">
+                    <i class="fa-regular fa-image"></i>
                 </button>
                 <button id="camScreenshot" onclick="screenShot()" title="Take a screenshot">
                     <i class="fa-solid fa-camera"></i>
@@ -101,19 +107,20 @@
                     <i class="fa-solid fa-bars"></i>
                 </button>
             </div>
-            <div class="meeting-view" id="meeting-view" style="display: none;">
-                <p class="meeting-transcript" id="meeting-transcript">Meeting transcript appears here.</p>
-                <div class="meeting-controls" id="meeting-controls">
-                    <button id="start-transcript" title="Start speech recognition" onclick="startRecord()">
-                        <i class="fa-solid fa-microphone"></i>
-                    </button>
-                    <button id="save-transcript" title="Save transcript" onclick="saveTranscript()">
-                        <i class="fa-solid fa-floppy-disk"></i>
-                    </button>
-                    <button id="clear-transcript" title="Clear transcript" onclick="clearTranscript()">
-                        <i class="fa-solid fa-trash-can"></i>
-                    </button>
-                </div>
+        </div>
+
+        <div class="meeting-view" id="meeting-view" style="display: none;">
+            <p class="meeting-transcript" id="meeting-transcript">Meeting transcript appears here. Try saying "Hey Abegail".</p>
+            <div class="meeting-controls" id="meeting-controls">
+                <button id="start-transcript" title="Start speech recognition" onclick="startRecord()">
+                    <i class="fa-solid fa-microphone"></i>
+                </button>
+                <button id="save-transcript" title="Save transcript" onclick="saveTranscript()">
+                    <i class="fa-solid fa-floppy-disk"></i>
+                </button>
+                <button id="clear-transcript" title="Clear transcript" onclick="clearTranscript()">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
             </div>
         </div>
 
@@ -219,7 +226,14 @@
             <div class="setting-item">
                 <label>Speech Rate</label>
                 <input type="range" id="rateSlider" min="0.1" max="2" step="0.1" value="0.9" />
-                <span id="rateValue">0.9 (default)</span>
+                <span id="rateValue">1.2</span>
+            </div>
+            <div class="setting-item">
+                <label>Automatic Text-To-Speech</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="autoreadToggle">
+                    <span class="slider"></span>
+                </label>
             </div>
         </div>
     </div>
@@ -229,7 +243,7 @@
         <button class="context-item" onclick="copyMessage()">
             <i class="fas fa-copy"></i> Copy
         </button>
-        <button class="context-item" onclick="textToSpeech()">
+        <button class="context-item" id="ttsButton" onclick="textToSpeech()">
             <i class="fa fa-volume-up"></i> Read Aloud
         </button>
         <button class="context-item" onclick="showReacts()" style="anchor-name: --react-menu;">

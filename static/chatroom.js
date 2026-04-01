@@ -6,17 +6,19 @@ let selectedBubble = null;
 let currentTheme = localStorage.getItem('theme') || 'light';
 let autoScroll = localStorage.getItem('autoScroll') !== 'false';
 let soundEnabled = localStorage.getItem('soundEnabled') === 'true';
+let autoRead = localStorage.getItem('autoRead') === 'true';
 let fontSize = parseInt(localStorage.getItem('fontSize')) || 14;
 
 const t2speech = window.speechSynthesis;
-let voices = t2speech.getVoices();
+let voices;
 let selectedVoice;
-let speechRate = 0.9;
+let speechRate = 1.2;
 
 const SpeechRecognition = window.SpeechRecognition;
 const recognition = new SpeechRecognition();
 recognition.continuous = true;
-recognition.maxAlternatives = 50;
+recognition.lang = "en-US";
+recognition.maxAlternatives = 10;
 let sttFlag = false;
 let utterance = '';
 
@@ -30,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Set font size
     document.documentElement.style.setProperty('--base-font-size', `${fontSize}px`);
+    document.documentElement.style.fontSize = `${fontSize}px`;
     document.getElementById('fontSizeSlider').value = fontSize;
     document.getElementById('fontSizeValue').textContent = `${fontSize}px`;
 });
@@ -64,6 +67,12 @@ function initializeSettings() {
         document.getElementById('soundToggle').checked = savedSound === 'true';
         soundEnabled = savedSound === 'true';
     }
+
+    const savedAutoRead = localStorage.getItem('autoRead');
+    if (savedAutoRead !== null) {
+        document.getElementById('autoreadToggle').checked = savedAutoRead === 'true';
+        autoRead = savedAutoRead === 'true';
+    }
 }
 
 function initializeEventListeners() {
@@ -83,7 +92,7 @@ function initializeEventListeners() {
     document.getElementById('settingsClose').addEventListener('click', toggleSettings);
     
     // Search
-    document.getElementById('searchToggle').addEventListener('click', toggleSearch);
+    // document.getElementById('searchToggle').addEventListener('click', toggleSearch);
     // document.getElementById('searchClose').addEventListener('click', toggleSearch);
     document.getElementById('searchInput').addEventListener('input', handleSearch);
     
@@ -97,11 +106,16 @@ function initializeEventListeners() {
         soundEnabled = e.target.checked;
         localStorage.setItem('soundEnabled', soundEnabled);
     });
+
+    document.getElementById('autoreadToggle').addEventListener('change', (e) => {
+        autoRead = e.target.checked;
+        localStorage.setItem('autoRead', autoRead);
+    });
     
     document.getElementById('fontSizeSlider').addEventListener('input', (e) => {
         fontSize = parseInt(e.target.value);
         document.documentElement.style.setProperty('--base-font-size', `${fontSize}px`);
-        document.documentElement.style.fontSize = fontSize;
+        // document.documentElement.style.fontSize = `${fontSize}px`;
         document.getElementById('fontSizeValue').textContent = `${fontSize}px`;
         localStorage.setItem('fontSize', fontSize);
     });
@@ -142,24 +156,56 @@ function toggleTheme() {
 
 function toggleSettings() {
     const panel = document.getElementById('settingsPanel');
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    const icon = document.getElementById('settingsToggle').querySelector('i');
+
+    // icon.style.transform = 'rotate(180deg)';
+    // panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+
+    if (panel.style.display == 'none') {
+        panel.style.display = 'block';
+        icon.style.transform = 'translateY(0.5px) rotate(180deg)';
+    }
+    else {
+        panel.style.display = 'none';
+        icon.style.transform = '';
+    }
     playSound('click');
+}
+
+function hideSearch(e) {
+    // console.log(e.target);
+    const searchBar = document.getElementById('searchBar');
+    const searchButton = document.getElementById("searchToggle");
+    if (!e.target.closest('#searchBar') && !e.target.closest('#searchToggle')) {
+        document.getElementById('searchInput').value = '';
+        clearSearchResults();
+        searchBar.style.display = 'none';
+
+        document.removeEventListener('click', hideSearch);
+        searchButton.querySelector('.fa-times').style.display = 'none';
+        searchButton.querySelector('.fa-search').style.display = '';
+    }
 }
 
 function toggleSearch() {
     const searchBar = document.getElementById('searchBar');
     const searchButton = document.getElementById("searchToggle");
 
-    if (searchBar.style.display === 'none') {
+    if (searchBar.style.display == 'none') {
         searchBar.style.display = 'flex';
-        searchButton.innerHTML = '<i class="fas fa-times"></i>';
+        searchButton.querySelector('.fa-search').style.display = 'none';
+        searchButton.querySelector('.fa-times').style.display = '';
         document.getElementById('searchInput').focus();
+        document.addEventListener('click', hideSearch);
     }
-    else if (searchBar.style.display === 'flex') {
+    else if (searchBar.style.display == 'flex') {
         document.getElementById('searchInput').value = '';
         clearSearchResults();
         searchBar.style.display = 'none';
-        searchButton.innerHTML = '<i class="fas fa-search"></i>';
+        
+        document.removeEventListener('click', hideSearch);
+        searchButton.querySelector('.fa-times').style.display = 'none';
+        searchButton.querySelector('.fa-search').style.display = '';
     }
     playSound('click');
 }
@@ -250,19 +296,29 @@ function handleKeyboardShortcuts(e) {
 }
 
 function clickOutInput(e) {
+    // console.log(e.target);
     if (!e.target.closest('#chatOptions') && !e.target.closest('#more-inputs')) {
-        document.getElementById("more-inputs").style.display = 'none';
-        const optionsButton = document.getElementById("chatOptions");
-        const icon = optionsButton.children[0];
-        icon.style.transform = '';
-
-        document.removeEventListener('click', clickOutInput);
+        // document.getElementById("more-inputs").style.display = 'none';
+        // const optionsButton = document.getElementById("chatOptions");
+        // const icon = optionsButton.querySelector('i');
+        // icon.style.transform = '';
+        hideMoreInputs();
+        // document.removeEventListener('click', clickOutInput);
     }
+}
+
+function hideMoreInputs() {
+    const optionsButton = document.getElementById("chatOptions");
+    const icon = optionsButton.querySelector('i');
+    icon.style.transform = '';
+    document.getElementById("more-inputs").style.display = 'none';
+
+    document.removeEventListener('click', clickOutInput);
 }
 
 function showMoreInputs() {
     const optionsButton = document.getElementById("chatOptions");
-    const icon = optionsButton.children[0];
+    const icon = optionsButton.querySelector('i');
     
     const moreInputs = document.getElementById("more-inputs");
     if (moreInputs.style.display === 'none') {
@@ -301,8 +357,12 @@ function saveTranscript() {
 
 function clearTranscript() {
     const full_text = document.getElementById("meeting-transcript");
-    full_text.innerText = 'Meeting transcript appears here.';
+    full_text.style.animation = 'slideOutLeft 1s ease-in';
+    full_text.innerText = 'Meeting transcript appears here. Try saying "Hey Abegail".';
     showNotification("Cleared transcript");
+    setTimeout(function () {
+        full_text.style.animation = null;
+    }, 2000);
 }
 
 const mainGrid = document.getElementById("center-box");
@@ -321,6 +381,8 @@ function toggleWebcam() {
         document.getElementById("openWebcam").style = 'background: var(--bad-button); color: white;'
     }
     else if (videoUI.style.display == 'flex') {
+        // toggleMeeting();
+        meetingPanel.style.display = 'none';
         videoUI.style.display = 'none';
         mainGrid.classList.remove('webcamON');
         chatUI.classList.remove('reduced');
@@ -341,6 +403,14 @@ function showContextMenu(e, messageBubble) {
     const menu = document.getElementById('contextMenu');
     // selectedMessageId = messageBubble.dataset.messageId;
     selectedBubble = messageBubble;
+
+    const ttsButton = document.getElementById("ttsButton");
+    if (t2speech.speaking) {
+        ttsButton.innerHTML = `<i class="fa-solid fa-stop"></i> Stop Reading`;
+    }
+    else {
+        ttsButton.innerHTML = `<i class="fa fa-volume-up"></i> Read Aloud`;
+    }
     
     menu.style.display = 'block';
     menu.style.left = `${e.pageX}px`;
@@ -365,7 +435,8 @@ function hideContextMenu() {
     document.getElementById("react-items").style.display = 'none';
     selectedMessageId = null;
     if (selectedBubble) {
-        selectedBubble.style.border = "none";
+        // selectedBubble.style.border = "none";
+        selectedBubble.style.border = "";
         selectedBubble = null;
     }
     document.removeEventListener('click', clickOut);
@@ -433,7 +504,7 @@ function deleteMessage() {
         // const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
         const messageBubble = selectedBubble.closest(".message-bubble")
         if (messageBubble) {
-            messageBubble.style.animation = 'slideOut 0.3s ease';
+            messageBubble.style.animation = 'slideOutRight 0.3s ease';
             setTimeout(() => messageBubble.remove(), 300);
             playSound('delete');
         }
@@ -496,10 +567,21 @@ function submitFile() {
         .then(response => response.json())
         .then(data => {
             // console.log("Submitted file.", data);
-            showNotification("Submitted file.");
-            cancelFile();
+            if (data.success) {
+                showNotification("Submitted file.");
+                cancelFile();
+            }
+            else {
+                console.error('Error:', data.error);
+                showNotification(`Error: ${data.error}`);
+                cancelFile();
+            }
         })
-        .catch(error => console.error('Error:', error));
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification(`Error: ${error}`);
+            cancelFile();
+        });
 }
 
 function cancelFile() {
@@ -572,19 +654,19 @@ function playSound(type) {
 
 const speechButton = document.getElementById("recordSpeech"); //one shot mode
 function startRecordOneShot() {
-    recognition.lang = "en-US";
+    // recognition.lang = "en-US";
     t2speech.cancel();
     speechButton.innerHTML = '<i class="fa-solid fa-stop"></i>';
+    document.getElementById('chatInput').focus();
     if (sttFlag == false) {
         recognition.start();
     }
-    // console.log("One shot speech recog activated.");
     recognition.addEventListener('result', recogOneShot);
 }
 
 const speechButton2 = document.getElementById("start-transcript"); //continuous mode
 function startRecord() {
-    recognition.lang = "fil-PH";
+    // recognition.lang = "fil-PH";
     if (sttFlag == false) {
         recognition.abort();
         t2speech.cancel();
@@ -616,10 +698,15 @@ function recogOneShot(event) {
     chatInput.value = current_text + " " + transcript;
 
     setTimeout(() => {
-        sendMessage();
-        // console.log("Message sent.");
         if (sttFlag == false) {
+            sendMessage();
             recognition.stop();
+            hideMoreInputs();
+        }
+        else if (sttFlag == true) {
+            // let full_transcript = document.getElementById("meeting-transcript").innerText;
+            // sendTranscript(full_transcript, chatInput.value);
+            sendMessage(true);
         }
         speechButton.innerHTML = '<i class="fa-solid fa-microphone"></i>';
         recognition.removeEventListener('result', recogOneShot);
@@ -628,25 +715,33 @@ function recogOneShot(event) {
 
 function recogContinuous(event) {
     const stt_result = event.results[event.resultIndex];
-    const transcript = stt_result[0].transcript;
+    let transcript = stt_result[0].transcript;
     // const confidence = stt_result[0].confidence;
     // console.log(`Transcript: ${transcript}`);
 
     let position = transcript.search(/hey abigail/i);
     if (position != -1) {
+        transcript = transcript.replace(/abigail/g, "Abegail");
         document.getElementById("chatInput").focus();
+        playSound('click');
         recognition.addEventListener('result', recogOneShot);
     }
 
     const full_text = document.getElementById("meeting-transcript");
     let current_text = full_text.innerText;
     full_text.innerText = current_text + "\n\n" + transcript;
-    // meetingPanel.scrollTop = meetingPanel.scrollHeight;
     full_text.scrollTop = full_text.scrollHeight;
 }
 
 recognition.onerror = (event) => {
     console.log("STT Error:", event.error);
+    recognition.abort();
+    speechButton.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+    speechButton2.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+}
+
+recognition.onend = () => {
+    console.log("Speech recognition service disconnected.");
     recognition.abort();
     speechButton.innerHTML = '<i class="fa-solid fa-microphone"></i>';
     speechButton2.innerHTML = '<i class="fa-solid fa-microphone"></i>';
@@ -676,7 +771,13 @@ const speakerIDtest = document.getElementById("camMeeting");
 let audioFlag = false;
 let trainFlag = false;
 
-if (navigator.mediaDevices.getUserMedia) {
+if (navigator.mediaDevices == null) {
+    console.log("URL not secured so mediaDevices is undefined.");
+    addVoice.disabled = true;
+    speechButton.disabled = true;
+    speechButton2.disabled = true;
+}
+else if (navigator.mediaDevices.getUserMedia) {
     // console.log("The mediaDevices.getUserMedia() method is supported.");
     const constraints = {audio: true};
     let chunks = [];
@@ -745,54 +846,53 @@ function populateVoices() {
     voices = t2speech.getVoices();
     // console.log(voices);
     voiceList.replaceChildren();
-    for (let voice of voices) {
+    for (let [i, voice] of voices.entries()) {
         if (voice.lang == 'en-US' || voice.lang == 'en-GB' || voice.lang == 'en-AU') {
             const option = document.createElement("option");
             option.textContent = `${voice.name}`;
-            voiceList.appendChild(option);
-            if (voice.name == "Microsoft Aria Online (Natural) - English (United States)") {
-                selectedVoice = voice;
-                // console.log("Default voice: ", voice.name);
+            option.value = i;
+            // voiceList.appendChild(option);
+            voiceList.add(option);
+            if (voice.name == "Microsoft Ana Online (Natural) - English (United States)") {
+                selectedVoice = i;
             }
         }
         
     }
-    voiceList.value = "Microsoft Aria Online (Natural) - English (United States)";
+    voiceList.value = selectedVoice;
+    // console.log("Default voice: ", voices[selectedVoice].name);
 }
 
 t2speech.onvoiceschanged = populateVoices;
 
 voiceList.addEventListener('change', (e) => {
-    // console.log("testing: ", e.target.value);
-    for (let voice of voices) {
-        if (voice.name == e.target.value) {
-            selectedVoice = voice;
-            // console.log("Changed voice to: ", selectedVoice.name);
-            showNotification(`Changed voice to: ${selectedVoice.name}`);
-            break;
-        }
-    }
+    selectedVoice = voiceList.value;
+    // console.log("Voice set to: ", voices[selectedVoice].name);
 });
 
 function speak(text) {
+    // console.log(`Utterance Params: ${voices[selectedVoice].name} ${speechRate}`)
     utterance = new SpeechSynthesisUtterance(text);
-    utterance.voice = selectedVoice;
+    utterance.voice = voices[selectedVoice];
     utterance.rate = speechRate;
     t2speech.speak(utterance);
 }
 
 function textToSpeech() {
-    // change the selector since chat bubbles with the same name default to the first
     // if (!selectedMessageId) return;
     if (!selectedBubble) return;
     
     // const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
     const messageBubble = selectedBubble;
     if (messageBubble) {
-        t2speech.cancel();
-        // const bubble = messageBubble.querySelector('.bubble');
-        const text = messageBubble.textContent.trim();
-        speak(text);
+        if (t2speech.speaking) {
+            t2speech.cancel();
+        }
+        else {
+            // const bubble = messageBubble.querySelector('.bubble');
+            const text = messageBubble.textContent.trim();
+            speak(text);
+        }
     }
     
     hideContextMenu();
@@ -858,6 +958,14 @@ function addMessage(message, isUser = false, metadata = {}) {
         <div class="reactions" id="chatReact"></div>
         ${metadata.timestamp || getCurrentTime()} ${badges}
     `;
+
+    let chart_viewer = '';
+    if (metadata.response_type === 'chart' && isUser == false) {
+        chart_viewer = `
+<div style="height: 200px; width: 100%; background: white; margin-top: 10px;">
+    <canvas id="myChart"></canvas>
+</div>`;
+    }
     
     messageDiv.innerHTML = `
         <div class="message-content">
@@ -866,6 +974,7 @@ function addMessage(message, isUser = false, metadata = {}) {
                 <div class="${bubbleClass}" data-original="${escapeHtml(message)}">
                     ${messageContent}
                     ${csvButton}
+                    ${chart_viewer}
                 </div>
                 <div class="timestamp">
                     ${msgFooter}
@@ -1035,18 +1144,10 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-async function sendMessage() {
-    // if (sttFlag) {
-    //     recognition.stop();
-    //     sttFlag = false;
-    //     console.log("Speech recognition stopped.");
-    //     speechButton.innerHTML = '<i class="fa-solid fa-microphone"></i>';
-    // }
-    
-    t2speech.cancel();
+async function sendMessage(withTranscript = false) {
     const input = document.getElementById('chatInput');
     const sendButton = document.getElementById('chatSend');
-    const message = input.value.trim();
+    let message = input.value.trim();
     
     if (!message) return;
     
@@ -1058,6 +1159,15 @@ async function sendMessage() {
     input.disabled = true;
     updateStatus('Processing...', 'processing');
     showTypingIndicator();
+
+    if (withTranscript == true) {
+        let full_transcript = document.getElementById("meeting-transcript").innerText;
+        message = `Query: ${message} Current meeting transcript: ${full_transcript}`;
+        console.log('Message sent (WITH transcript)');
+    }
+    else {
+        console.log('Message sent (no transcript)');
+    }
     
     try {
         const response = await fetch('/api/chat', {
@@ -1078,18 +1188,29 @@ async function sendMessage() {
             addMessage(data.message || 'An error occurred', false, { ...data, response_type: 'error' });
             updateStatus('Error', 'error');
         }
-        // else if (data.redirect) {
-        //     addMessage(data.message, false, data);
-        //     updateStatus('Ready', 'ready');
-        //     window.open("webcam", "_blank");
-        // }
         else {
             addMessage(data.message, false, data);
             updateStatus('Ready', 'ready');
-            setTimeout(function() {
-                speak(data.message);
-            }, 1000);
-            // speak(data.message);
+            if (autoRead) {
+                setTimeout(function() {
+                    speak(data.message);
+                }, 1000);
+            }
+
+            if (data.response_type === 'chart') {
+                let valuesArray = await parseCsv(message);
+                console.log(valuesArray);
+                
+                const chartName = valuesArray[0];
+                const chartData = valuesArray[1];
+                const labels = valuesArray[2];
+                if (!chartData) {
+                    console.log("Error creating chart");
+                }
+                else{
+                    createChart(chartName, chartData, labels);
+                }
+            }
         }
         
     } catch (error) {
@@ -1249,11 +1370,11 @@ function screenShot() {
         // console.log("Screenshot taken.");
         showNotification("Screenshot taken.");
         flash.style.display = 'none';
-        // if (data.img_src) {
-            // shotsHTML = shotsContent.innerHTML;
-            // img_title = "title='" + data.img_src.slice(8) + "'/>";
-            // shotsContent.innerHTML = "<img src='/screenshots/" + data.img_src + "' alt='screenshot taken through the webcam' " + img_title + shotsHTML;
-        // }
+        if (data.img_src) {
+            shotsHTML = shotsContent.innerHTML;
+            img_title = "title='" + data.img_src.slice(8) + "'/>";
+            shotsContent.innerHTML = "<img src='/screenshots/" + data.img_src + "' alt='screenshot taken through the webcam' " + img_title + shotsHTML;
+        }
     })
     .catch(error => console.error('Error:', error));
 }
@@ -1267,6 +1388,7 @@ const nameInput = document.getElementById("nameField");
 
 // Shows/hides the overlay for face registration
 function toggleOverlay() {
+    hideSettings();
     moreSettings.style.display = 'none';
     if (ellipseOverlay.style.display == 'none') {
         ellipseOverlay.style.display = 'flex';
@@ -1352,9 +1474,15 @@ submitFace.addEventListener('click', () => {
 const moreSettings = document.getElementById("cam-options");
 function clickOutCam(e) {
     if (!e.target.closest("#cam-options") && !e.target.closest("#camOptions")) {
-        moreSettings.style.display = 'none';
-        document.removeEventListener('click', clickOutCam);
+        // moreSettings.style.display = 'none';
+        // document.removeEventListener('click', clickOutCam);
+        hideSettings();
     }
+}
+
+function hideSettings() {
+    moreSettings.style.display = 'none';
+    document.removeEventListener('click', clickOutCam);
 }
 
 function showSettings() {
@@ -1363,8 +1491,7 @@ function showSettings() {
         document.addEventListener('click', clickOutCam);
     }
     else if (moreSettings.style.display == 'flex') {
-        moreSettings.style.display = 'none';
-        document.removeEventListener('click', clickOutCam);
+        hideSettings();
     }
 }
 
@@ -1374,7 +1501,17 @@ const shotsContent = document.getElementById("shotsContent");
 const facesContent = document.getElementById("facesContent");
 let loadedFlag = false;
 function loadImages() {
-    
+    const shotsChildren = shotsContent.querySelectorAll('img');
+    for (let sc of shotsChildren) {
+        sc.src = sc.dataset.source;
+        // console.log(sc.src);
+    }
+
+    const facesChildren = facesContent.querySelectorAll('img');
+    for (let fc of facesChildren) {
+        fc.src = fc.dataset.source;
+        // console.log(fc.src);
+    }
 }
 
 function showGallery() {
@@ -1415,13 +1552,41 @@ function switchTab(element, event) {
     }
 }
 
+// swipe event handler on touch
+let touchStartX = 0;
+let touchEndX = 0;
+
+function initialTouch(e) {
+    touchStartX = e.touches[0].pageX;
+}
+
+function finalTouch(e) {
+    touchEndX = e.changedTouches[0].pageX;
+}
+
+function swipeLeft() {
+    if (touchEndX < touchStartX) {
+        meetingPanel.style.display = 'none';
+    }
+}
+
 function toggleMeeting() {
-    const meetingPanel = document.getElementById('meeting-view');
+    // const meetingPanel = document.getElementById('meeting-view');
+    // const chatMessages = document.getElementById('chat-messages');
+    hideSettings();
     if (meetingPanel.style.display == 'none') {
+        // chatMessages.style.display = 'none';
         meetingPanel.style.display = 'flex';
+        document.addEventListener('touchstart', initialTouch);
+        document.addEventListener('touchmove', finalTouch);
+        document.addEventListener('touchend', swipeLeft);
     }
     else if (meetingPanel.style.display == 'flex') {
         meetingPanel.style.display = 'none';
+        // chatMessages.style.display = '';
+        document.removeEventListener('touchstart', initialTouch);
+        document.removeEventListener('touchmove', finalTouch);
+        document.removeEventListener('touchend', swipeLeft);
     }
 }
 
@@ -1471,6 +1636,7 @@ function stopFaceRecog() {
 
 // Toggle for face recognition
 function toggleRecog() {
+    hideSettings();
     if (recogStatus.checked == true) {
         stopFaceRecog();
     }
@@ -1498,7 +1664,7 @@ function populateDropdown() {
     .catch(error => console.error('Error:', error));
 }
 
-populateDropdown();
+// populateDropdown();
 
 function parseCsv(filename) {
     return fetch(`/chart/${filename}`, {})
@@ -1591,46 +1757,21 @@ function createChart(chartName, chartData, labels) {
         }
     };
 
+    const chartNodes = document.querySelectorAll('canvas');
+    console.log(chartNodes);
+    let chart_space = null;
+    if (chartNodes.length > 1) {
+        const lastIndex = chartNodes.length - 1;
+        chart_space = chartNodes[lastIndex];
+    }
+    else {
+        const lastIndex = 0;
+        chart_space = chartNodes[lastIndex];
+    }
+
     myChart = new Chart(
-        document.getElementById('myChart'),
+        // document.getElementById('myChart'),
+        chart_space,
         config
     );
 }
-
-// Add CSS animations
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideOut {
-        from {
-            opacity: 1;
-            transform: translateX(0);
-        }
-        to {
-            opacity: 0;
-            transform: translateX(100%);
-        }
-    }
-    
-    @keyframes slideInRight {
-        from {
-            transform: translateX(100%);
-            opacity: 0;
-        }
-        to {
-            transform: translateX(0);
-            opacity: 1;
-        }
-    }
-    
-    @keyframes slideOutRight {
-        from {
-            transform: translateX(0);
-            opacity: 1;
-        }
-        to {
-            transform: translateX(100%);
-            opacity: 0;
-        }
-    }
-`;
-// document.head.appendChild(style);

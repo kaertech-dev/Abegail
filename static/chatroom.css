@@ -1,5 +1,8 @@
 /* Enhanced Chatroom CSS with Dark Mode Support */
 :root {
+    height: 100%;
+    width: 100%;
+
     --primary-color: #317212;
     --primary-hover: #35bd40;
     --secondary-color: #27ae60;
@@ -43,6 +46,8 @@
     --good-hover: #33ce04;
     --bad-button: #d93434;
     --bad-hover: #ff2a46;
+
+    --overlay: #9b9b9b99;
 }
 
 [data-theme="dark"] {
@@ -57,13 +62,13 @@
     --shadow-hover: rgba(0, 0, 0, 0.5);
     
     --user-bubble: #4a90e2;
-    --bot-bubble: #2d2c2c;
-    --bot-bubble-text: #f5f5f5;
+    --bot-bubble: #4b4b4b;
+    --bot-bubble-text: #ffffff;
     
-    --gradient-start: #4b4949;
-    --gradient-end: #06061e;
+    --gradient-start: #374d51;
+    --gradient-end: #190f23;
 
-    --body-bg: #35373b;
+    --body-bg: #1e232d;
     --container-bg: #2c3033;
     /* --main-contrast: #417940;
     --contrast-text: #ffffff; */
@@ -74,10 +79,10 @@
     --button-icon: #333333;
     --context-hover: #396b33;
 
-    --good-button: #a1e97e;
+    /* --good-button: #a1e97e;
     --good-hover: #63ff33;
     --bad-button: #d93434;
-    --bad-hover: #ff2a46;
+    --bad-hover: #ff2a46; */
 }
 
 * {
@@ -142,12 +147,12 @@ body {
     display: flex;
     flex-direction: column;
     margin-bottom: -50px;
-    padding-top: 10px;
-    gap: 10px;
+    /* padding-top: 10px; */
+    gap: 15px;
     position: absolute;
     position-anchor: --more-inputs;
     position-area: top;
-    background: white;
+    background: var(--overlay);
     border-radius: 30px;
     height: 180px;
     width: 50px;
@@ -159,7 +164,7 @@ body {
     background: white;
     border: none;
     border-radius: 50%;
-    font-size: 1.2em;
+    font-size: 19.2px;
     height: 50px;
     width: 50px;
     animation: slideInBottom 0.3s ease-out;
@@ -169,7 +174,7 @@ body {
     background: white;
     border: none;
     border-radius: 50%;
-    font-size: 1.2em;
+    font-size: 19.2px;
     width: 32px;
     padding: 5px;
 }
@@ -179,12 +184,14 @@ body {
     min-height: 90vh;
     border-radius: 20px;
     display: grid;
-    grid-template-areas: '. buttons' 'webcam chat';
-    grid-template-rows: 50px auto;
+    /* grid-template-areas: '. buttons' 'webcam chat'; */
+    grid-template-areas: '. buttons' 'webcam chat' 'meeting chat';
+    grid-template-rows: 50px 530px auto;
     grid-template-columns: 0 800px;
     padding: 15px;
     row-gap: 10px;
     /* column-gap: 10px; */
+    font-size: var(--base-font-size);
     transition: grid-template-columns 0.5s ease-out, grid-template-rows 0.5s ease-out;
 }
 
@@ -194,7 +201,7 @@ body {
     width: 50px;
     height: 50px;
     border-radius: 50%;
-    font-size: 1.2em;
+    font-size: 19.2px;
     z-index: 10;
 }
 
@@ -210,10 +217,13 @@ body {
 
 #status-file {
     gap: 10px;
+    align-items: center;
+    max-width: 90%;
 }
 
 #attached-file {
     padding: 5px 0;
+    word-break: break-all;
 }
 
 #status-file button {
@@ -259,6 +269,18 @@ body {
     gap: 10px;
 }
 
+.right-buttons i {
+    transition: transform 0.3s;
+}
+
+/* .cam-buttons {
+    grid-area: cam-buttons;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 10px;
+} */
+
 .main-video-ui {
     grid-area: webcam;
     display: flex;
@@ -271,6 +293,7 @@ body {
     background: gray;
     max-height: 480px;
     max-width: 640px;
+    border-radius: 10px;
     display: flex;
     justify-content: center;
     position: relative;
@@ -298,6 +321,7 @@ body {
 }
 
 .meeting-view {
+    grid-area: meeting;
     background: var(--body-bg);
     color: var(--text-primary);
     flex: 1;
@@ -311,7 +335,7 @@ body {
 .meeting-transcript {
     overflow-y: auto;
     width: 100%;
-    height: 214.5px;
+    /* height: 214.5px; */
     margin-right: 10px;
 }
 
@@ -326,6 +350,7 @@ body {
 
 .chat-header h2 {
     color: var(--contrast-text);
+    font-size: 27px;
     padding: 5px 0;
 }
 
@@ -338,6 +363,7 @@ body {
     padding: 10px;
     /* background: var(--bg-secondary); */
     scroll-behavior: smooth;
+    transition: grid-template-areas 0.5s ease-out, grid-template-columns 0.5s ease-out, grid-template-rows 0.5s ease-out;
 }
 
 .csv-action button.download-csv {
@@ -473,7 +499,7 @@ body {
     right: 5px; */
     display: flex;
     flex-direction: column;
-    height: 100%;
+    /* height: 100%; */
     justify-content: space-evenly;
 }
 
@@ -498,7 +524,7 @@ body {
     position: absolute;
     position-anchor: --search-button;
     position-area: right;
-    background: white;
+    background: var(--overlay);
     border-radius: 30px;
     box-shadow: 7px 7px 20px 10px var(--shadow);
     animation: slideInLeft 0.2s ease-out;
@@ -1209,7 +1235,7 @@ body {
     /* border: 1px solid var(--border-color); */
     border-radius: 8px;
     box-shadow: 0 4px 20px var(--shadow);
-    z-index: 30;
+    z-index: 10;
     min-width: 150px;
     overflow: hidden;
 }
@@ -1244,7 +1270,7 @@ body {
     background: var(--text-bg);
     border: 1px solid var(--main-contrast);
     border-radius: 10px;
-    z-index: 30;
+    z-index: 15;
     box-shadow: 0 4px 20px var(--shadow);
     display: flex;
     flex-direction: row;
@@ -1274,7 +1300,7 @@ body {
     height: 480px;
     border-radius: 10px;
     position: absolute;
-    z-index: 30;
+    z-index: 20;
     background: transparent;
     animation: visual-flash 0.6s;
 }
@@ -1287,7 +1313,7 @@ body {
     left: 0;
     background: var(--text-bg);
     color: var(--text-primary);
-    border-radius: 0 15px 15px 0;
+    border-radius: 0 10px 10px 0;
     overflow: hidden;
     width: 360px;
     height: 100%;
@@ -1391,19 +1417,24 @@ button.button-register {
 
 /* Add this class to center-box when webcam is shown */
 .webcamON {
+    /* grid-template-areas: 'cam-buttons buttons' 'webcam chat'; */
     grid-template-columns: 640px 520px;
+    /* grid-template-rows: 50px 530px auto; */
     column-gap: 10px;
 }
 
 /* Responsive Design */
 @media (max-width: 768px) {
     body {
+        height: 100%;
+        width: 100%;
         padding: 0;
     }
 
     .chat-messages {
         padding: 10px 5px;
         border-radius: 0;
+        background: linear-gradient(180deg, var(--gradient-start) 0%, var(--gradient-end) 100%);
     }
 
     /* .reduced {
@@ -1412,7 +1443,7 @@ button.button-register {
 
     .message-content {
         max-width: 85%;
-        font-size: 14px;
+        /* font-size: 14px; */
     }
 
     .icon-button {
@@ -1436,7 +1467,7 @@ button.button-register {
     }
 
     .center-box {
-        height: 100vh;
+        height: 100dvh;
         width: 100%;
         grid-template-areas: 'buttons' 'webcam' 'chat';
         grid-template-rows: 50px 0 calc(100% - 50px);
@@ -1455,15 +1486,40 @@ button.button-register {
         max-height: 100%;
     }
 
+    .chat-header h2 {
+        font-size: 21px;
+    }
+
     .center-box button {
         width: 40px;
         height: 40px;
-        font-size: 1em;
+        font-size: 18px;
+    }
+
+    .meeting-view {
+        grid-area: chat;
+        border-radius: 0;
+        flex-direction: column;
+        z-index: 30;
+        height: 100%;
+    }
+
+    .meeting-transcript {
+        margin-right: 0;
+        margin-bottom: 10px;
+        flex: 1;
+    }
+
+    .meeting-controls {
+        flex-direction: row;
+        height: 40px;
     }
 
     .status {
         border-radius: 0;
         padding: 5px 10px;
+        anchor-name: --some-name;
+        max-width: 100%;
     }
 
     .main-buttons {
@@ -1616,14 +1672,14 @@ button.button-register {
     }
 }
 
-@keyframes slideOut {
+@keyframes slideOutLeft {
     from {
         opacity: 1;
         transform: translateX(0);
     }
     to {
         opacity: 0;
-        transform: translateX(100%);
+        transform: translateX(-100%);
     }
 }
 
