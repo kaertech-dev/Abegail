@@ -17,6 +17,15 @@
         <div id="moreSettings" class="more-settings"></div>
     </div>
 
+    <div class="chart-lightbox" id="chart-lightbox" style="display: none;">
+        <div class="canvas-div" id="canvas-div">
+            <canvas id="lightbox"></canvas>
+            <button class="exit-box" id="exit-box" onclick="exitLightbox()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
     <!-- Pop-up Buttons -->
     <div class="popUpButtons">
         <div class="search-bar" id="searchBar" style="display: none;">
@@ -145,12 +154,8 @@
             <div class="status" id="status">
                 <span id="status-file" style="display: none;">
                     <div class="attached-file" id="attached-file"></div>
-                    <button class="submitAttach" id="submitAttach" onclick="submitFile()">
-                        Submit
-                    </button>
-                    <button class="removeAttach" id="removeAttach" onclick="cancelFile()">
-                        Cancel
-                    </button>
+                    <!-- <button class="submitAttach" id="submitAttach" onclick="submitFile()">Upload</button> -->
+                    <button class="removeAttach" id="removeAttach" onclick="cancelFile()">Remove</button>
                 </span>
                 <span id="statusText">Ready</span>
                 <span class="status-indicator" id="statusIndicator"></span>
@@ -279,6 +284,15 @@
             {% endfor %}
         </div>
     </div>
+
+    <!-- <div class="chart-lightbox" id="chart-lightbox" style="display: none;">
+        <div class="canvas-div" id="canvas-div">
+            <canvas id="lightbox"></canvas>
+            <button class="exit-box" id="exit-box" onclick="exitLightbox()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div> -->
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

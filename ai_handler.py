@@ -10,9 +10,10 @@ from date_parser import extractDate
 from mcp_activity_server import ActivityAPI
 from mcp_attendance_client import get_attendance_service
 from mcp_attendance_server import AttendanceDB
+from kts_data_handler import ProductionDB
 
-# DEFAULT_MODEL = 'deepseek-r1:14b'
-DEFAULT_MODEL = 'deepseek-r1:8b'
+DEFAULT_MODEL = 'deepseek-r1:14b'
+# DEFAULT_MODEL = 'deepseek-r1:8b'
 
 path_name = './csv_files/'
 filename = ''
@@ -259,9 +260,34 @@ def attendance_handler(question: str, tool_call: str, default_name: str) -> dict
     else:
         return {'answer': result, 'response_type': 'attendance'}
 
+def kts_handler(question: str):
+    prodData = ProductionDB()
+    result = ''
+
+    if 'get process flow' in question:
+        gpf_match = re.search(r'get process flow for schema (\w+) model (\w+)', question)
+        if gpf_match:
+            result = prodData.getProcessFlow(gpf_match.group(1), gpf_match.group(2))
+
+    elif 'serial query' in question:
+        serial_match = re.search(r'K\d{11}', question)
+        if serial_match:
+            result = prodData.serialQuery(serial_match.group(0))
+
+    elif 'get wip' in question:
+        date_input = extractDate(question)
+        wip_match = re.search(r'get wip for schema (\w+) model (\w+) PO (\w+)', question)
+        if wip_match:
+            result = prodData.getWIP(wip_match.group(1), wip_match.group(2), wip_match.group(3), date_input[0])
+    
+    return result
+
 def ask_general_question(question: str, context: Optional[List], default_name: Optional[str]):
     """Enhanced general question handler with reasoning and GPU optimization"""
     MODEL_NAME = _get_model_name()
+
+    if 'get process flow' in question or 'serial query' in question or 'get wip' in question:
+        return {'answer': kts_handler(question), 'response_type': 'KTS'}
     
     context_section = f" Recent conversation: {context}\n" if context else ""
     # print(context_section)
@@ -305,28 +331,37 @@ Answer:"""
 
     return {'answer': result, 'csv_file': filename, 'response_type': query_type}
 
-def ask_with_file_parse(question: str):
+def ask_with_file_parse(filename: str, question: str):
+    if filename == '' and '.csv' in question:
+        parse_filename = re.search(r'([A-Za-z0-9_\-]+.csv)', question, re.IGNORECASE)
+        filename = parse_filename.group(1)
+    elif filename and not question:
+        question = 'Give a detailed but brief summary of the file.'
+    
     list_entries = []
-    with open(f'./csv_files/{question}', 'r') as file:
+    with open(f'./csv_files/{filename}', 'r') as file:
         for line in csv.DictReader(file):
             list_entries.append(line)
         
     full_prompt = f"""
+User Query: {question}
 File contents: {list_entries}
 
 Instructions:
-Give a detailed summary of the file contents.
-Be informative, concise, and friendly.
+Answer the user query based on the given contents of a file.
+Be informative, concise, and friendly. Provide examples from the file if necessary.
 
 Answer:"""
 
     result = handler_deepseek(full_prompt)
 
-    name_parts = question.replace('.csv', '').split('_')
-    converted_date = date.fromisoformat(name_parts[1])
-    if len(name_parts) > 2 and converted_date:
-        return {'answer': result, 'response_type': 'chart'}
-    else:
+    name_parts = filename.replace('.csv', '').split('_')
+    try:
+        converted_date = date.fromisoformat(name_parts[1])
+        # Check if attendance csv with date range
+        if len(name_parts) > 2 and converted_date:
+            return {'answer': result, 'response_type': 'chart'}
+    except ValueError:
         return {'answer': result, 'response_type': 'general'}
 
 

@@ -19,7 +19,7 @@ const recognition = new SpeechRecognition();
 recognition.continuous = true;
 recognition.lang = "en-US";
 recognition.maxAlternatives = 10;
-let sttFlag = false;
+let contsRecogFlag = false;
 let utterance = '';
 
 // Initialize
@@ -92,8 +92,6 @@ function initializeEventListeners() {
     document.getElementById('settingsClose').addEventListener('click', toggleSettings);
     
     // Search
-    // document.getElementById('searchToggle').addEventListener('click', toggleSearch);
-    // document.getElementById('searchClose').addEventListener('click', toggleSearch);
     document.getElementById('searchInput').addEventListener('input', handleSearch);
     
     // Settings controls
@@ -115,7 +113,6 @@ function initializeEventListeners() {
     document.getElementById('fontSizeSlider').addEventListener('input', (e) => {
         fontSize = parseInt(e.target.value);
         document.documentElement.style.setProperty('--base-font-size', `${fontSize}px`);
-        // document.documentElement.style.fontSize = `${fontSize}px`;
         document.getElementById('fontSizeValue').textContent = `${fontSize}px`;
         localStorage.setItem('fontSize', fontSize);
     });
@@ -158,9 +155,6 @@ function toggleSettings() {
     const panel = document.getElementById('settingsPanel');
     const icon = document.getElementById('settingsToggle').querySelector('i');
 
-    // icon.style.transform = 'rotate(180deg)';
-    // panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-
     if (panel.style.display == 'none') {
         panel.style.display = 'block';
         icon.style.transform = 'translateY(0.5px) rotate(180deg)';
@@ -173,7 +167,6 @@ function toggleSettings() {
 }
 
 function hideSearch(e) {
-    // console.log(e.target);
     const searchBar = document.getElementById('searchBar');
     const searchButton = document.getElementById("searchToggle");
     if (!e.target.closest('#searchBar') && !e.target.closest('#searchToggle')) {
@@ -296,14 +289,9 @@ function handleKeyboardShortcuts(e) {
 }
 
 function clickOutInput(e) {
-    // console.log(e.target);
+    // Handler function when user clicks outside of chat options
     if (!e.target.closest('#chatOptions') && !e.target.closest('#more-inputs')) {
-        // document.getElementById("more-inputs").style.display = 'none';
-        // const optionsButton = document.getElementById("chatOptions");
-        // const icon = optionsButton.querySelector('i');
-        // icon.style.transform = '';
         hideMoreInputs();
-        // document.removeEventListener('click', clickOutInput);
     }
 }
 
@@ -323,7 +311,7 @@ function showMoreInputs() {
     const moreInputs = document.getElementById("more-inputs");
     if (moreInputs.style.display === 'none') {
         moreInputs.style.display = 'flex';
-        icon.style.transform = 'rotate(45deg)';
+        icon.style.transform = 'rotate(135deg)';
 
         document.addEventListener('click', clickOutInput);
     }
@@ -349,7 +337,6 @@ function saveTranscript() {
     })
     .then(response => response.json())
     .then(data => {
-        // console.log("Saved transcript.");
         showNotification("Saved transcript.");
     })
     .catch(error => console.error('Error:', error));
@@ -381,7 +368,6 @@ function toggleWebcam() {
         document.getElementById("openWebcam").style = 'background: var(--bad-button); color: white;'
     }
     else if (videoUI.style.display == 'flex') {
-        // toggleMeeting();
         meetingPanel.style.display = 'none';
         videoUI.style.display = 'none';
         mainGrid.classList.remove('webcamON');
@@ -394,6 +380,7 @@ function toggleWebcam() {
 }
 
 function clickOut(e) {
+    // Handler function when user clicks outside of context menu
     if (!e.target.closest('.context-menu') && e.target.closest('.bubble') !== selectedBubble) {
         hideContextMenu();
     }
@@ -401,7 +388,6 @@ function clickOut(e) {
 
 function showContextMenu(e, messageBubble) {
     const menu = document.getElementById('contextMenu');
-    // selectedMessageId = messageBubble.dataset.messageId;
     selectedBubble = messageBubble;
 
     const ttsButton = document.getElementById("ttsButton");
@@ -445,12 +431,8 @@ function hideContextMenu() {
 function copyMessage() {
     if (!selectedBubble) return;
     
-    // const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
     const insideText = selectedBubble.textContent;
     if (insideText) {
-        // const bubble = messageBubble.querySelector('.bubble');
-        // const text = bubble.textContent.trim();
-        
         navigator.clipboard.writeText(insideText.trim()).then(() => {
             showNotification('Message copied to clipboard!');
             playSound('success');
@@ -469,9 +451,6 @@ function showReacts() {
 
 function reactToMessage(reaction) {
     if (!selectedBubble) return;
-    
-    // const reactions = ['👍', '❤️', '😊', '🎉', '👏'];
-    // const reaction = reactions[Math.floor(Math.random() * reactions.length)];
     const reactItems = document.getElementById("react-items");
     const chatReact = selectedBubble.nextElementSibling.querySelector("#chatReact");
     let reactList = chatReact.innerText;
@@ -558,30 +537,29 @@ function uploadFile() {
 function submitFile() {
     const file_input = document.getElementById('file-input');
     let formData = new FormData();
-    formData.append('file',file_input.files[0]);
+    formData.append('file', file_input.files[0]);
     
     fetch('/api/upload', {
         method: 'POST',
         body: formData
     })
-        .then(response => response.json())
-        .then(data => {
-            // console.log("Submitted file.", data);
-            if (data.success) {
-                showNotification("Submitted file.");
-                cancelFile();
-            }
-            else {
-                console.error('Error:', data.error);
-                showNotification(`Error: ${data.error}`);
-                cancelFile();
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification(`Error: ${error}`);
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification("Submitted file.");
             cancelFile();
-        });
+        }
+        else {
+            console.error('Error:', data.error);
+            showNotification(`Error: ${data.error}`);
+            cancelFile();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification(`Error: ${error}`);
+        cancelFile();
+    });
 }
 
 function cancelFile() {
@@ -590,7 +568,7 @@ function cancelFile() {
     document.getElementById("status-file").style.display = 'none';
 
     const fileInput = document.getElementById("file-input");
-    fileInput.files = null;
+    fileInput.value = '';
 
     document.getElementById("statusText").style.display = 'block';
 }
@@ -653,33 +631,41 @@ function playSound(type) {
 }
 
 const speechButton = document.getElementById("recordSpeech"); //one shot mode
+let oneshotRecogFlag = false;
 function startRecordOneShot() {
     // recognition.lang = "en-US";
     t2speech.cancel();
-    speechButton.innerHTML = '<i class="fa-solid fa-stop"></i>';
-    document.getElementById('chatInput').focus();
-    if (sttFlag == false) {
+    if (oneshotRecogFlag == false && contsRecogFlag == false) {
+        t2speech.cancel();
+        speechButton.innerHTML = '<i class="fa-solid fa-stop"></i>';
+        document.getElementById('chatInput').focus();
         recognition.start();
+        oneshotRecogFlag = true;
+        recognition.addEventListener('result', recogOneShot);
     }
-    recognition.addEventListener('result', recogOneShot);
+    else if (oneshotRecogFlag == true && contsRecogFlag == false) {
+        recognition.stop();
+        oneshotRecogFlag = false;
+        speechButton.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+        recognition.removeEventListener('result', recogOneShot);
+    }
+    
 }
 
 const speechButton2 = document.getElementById("start-transcript"); //continuous mode
 function startRecord() {
     // recognition.lang = "fil-PH";
-    if (sttFlag == false) {
+    if (contsRecogFlag == false) {
         recognition.abort();
         t2speech.cancel();
         speechButton2.innerHTML = '<i class="fa-solid fa-stop"></i>';
         recognition.start();
-        sttFlag = true;
-        // console.log("Start speaking...");
+        contsRecogFlag = true;
         recognition.addEventListener('result', recogContinuous);
     }
     else {
         recognition.stop();
-        sttFlag = false;
-        // console.log("Speech recognition stopped.");
+        contsRecogFlag = false;
         speechButton2.innerHTML = '<i class="fa-solid fa-microphone"></i>';
         recognition.removeEventListener('result', recogContinuous);
     }
@@ -698,12 +684,12 @@ function recogOneShot(event) {
     chatInput.value = current_text + " " + transcript;
 
     setTimeout(() => {
-        if (sttFlag == false) {
+        if (contsRecogFlag == false) {
             sendMessage();
             recognition.stop();
             hideMoreInputs();
         }
-        else if (sttFlag == true) {
+        else if (contsRecogFlag == true) {
             // let full_transcript = document.getElementById("meeting-transcript").innerText;
             // sendTranscript(full_transcript, chatInput.value);
             sendMessage(true);
@@ -844,14 +830,12 @@ else {
 const voiceList = document.getElementById("voice-list");
 function populateVoices() {
     voices = t2speech.getVoices();
-    // console.log(voices);
     voiceList.replaceChildren();
     for (let [i, voice] of voices.entries()) {
         if (voice.lang == 'en-US' || voice.lang == 'en-GB' || voice.lang == 'en-AU') {
             const option = document.createElement("option");
             option.textContent = `${voice.name}`;
             option.value = i;
-            // voiceList.appendChild(option);
             voiceList.add(option);
             if (voice.name == "Microsoft Ana Online (Natural) - English (United States)") {
                 selectedVoice = i;
@@ -860,18 +844,15 @@ function populateVoices() {
         
     }
     voiceList.value = selectedVoice;
-    // console.log("Default voice: ", voices[selectedVoice].name);
 }
 
 t2speech.onvoiceschanged = populateVoices;
 
 voiceList.addEventListener('change', (e) => {
     selectedVoice = voiceList.value;
-    // console.log("Voice set to: ", voices[selectedVoice].name);
 });
 
 function speak(text) {
-    // console.log(`Utterance Params: ${voices[selectedVoice].name} ${speechRate}`)
     utterance = new SpeechSynthesisUtterance(text);
     utterance.voice = voices[selectedVoice];
     utterance.rate = speechRate;
@@ -879,17 +860,14 @@ function speak(text) {
 }
 
 function textToSpeech() {
-    // if (!selectedMessageId) return;
     if (!selectedBubble) return;
     
-    // const messageBubble = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
     const messageBubble = selectedBubble;
     if (messageBubble) {
         if (t2speech.speaking) {
             t2speech.cancel();
         }
         else {
-            // const bubble = messageBubble.querySelector('.bubble');
             const text = messageBubble.textContent.trim();
             speak(text);
         }
@@ -898,6 +876,7 @@ function textToSpeech() {
     hideContextMenu();
 }
 
+let curr_chart_id = 0;
 function addMessage(message, isUser = false, metadata = {}) {
     const messagesContainer = document.getElementById('chat-messages');
     const messageDiv = document.createElement('div');
@@ -908,18 +887,19 @@ function addMessage(message, isUser = false, metadata = {}) {
     const avatarClass = isUser ? 'user-avatar' : 'bot-avatar';
     
     let badges = '';
-    if (metadata.edited) {
-        badges += '<span class="badge edited">Edited</span>';
-    }
-    if (metadata.regenerated) {
-        badges += '<span class="badge regenerated">Regenerated</span>';
-    }
-    if (metadata.response_type === 'activity') {
-        badges += '<span class="badge company">Company Data</span>';
-    } else if (metadata.response_type === 'attendance') {
+    // if (metadata.edited) {
+    //     badges += '<span class="badge edited">Edited</span>';
+    // }
+    // if (metadata.regenerated) {
+    //     badges += '<span class="badge regenerated">Regenerated</span>';
+    // }
+
+    if (metadata.response_type === 'activity' || metadata.response_type === 'attendance' || metadata.response_type === 'KTS') {
         badges += '<span class="badge company">Company Data</span>';
     }else if (metadata.response_type === 'general') {
         badges += '<span class="badge general">General</span>';
+    }else if (metadata.response_type) {
+        badges += `<span class="badge others">${metadata.response_type}</span>`;
     }
     
     const editButton = isUser ? `
@@ -961,9 +941,12 @@ function addMessage(message, isUser = false, metadata = {}) {
 
     let chart_viewer = '';
     if (metadata.response_type === 'chart' && isUser == false) {
+        const chartNodes = document.querySelectorAll('canvas');
+        const chart_id = chartNodes.length - 1;
+        curr_chart_id = chart_id;
         chart_viewer = `
-<div style="height: 200px; width: 100%; background: white; margin-top: 10px;">
-    <canvas id="myChart"></canvas>
+<div style="height: 200px; max-width: 100%; background: white; margin-top: 10px;">
+    <canvas id="myChart_${chart_id}"></canvas>
 </div>`;
     }
     
@@ -1148,8 +1131,22 @@ async function sendMessage(withTranscript = false) {
     const input = document.getElementById('chatInput');
     const sendButton = document.getElementById('chatSend');
     let message = input.value.trim();
-    
-    if (!message) return;
+
+    const fileInput = document.getElementById("file-input");
+    let filename = '';
+
+    if (!message && fileInput.value == '') return;
+
+    if (fileInput.value != '') {
+        submitFile();
+        filename = fileInput.files[0].name;
+        // const msgId = `msg_${Date.now()}_${Math.random()}`;
+        // addMessage(`Uploaded file: ${filename}`, true, { id: msgId, timestamp: getCurrentTime() });
+        // showNotification('File uploaded successfully.');
+        // uploaded = document.createElement('em');
+        // uploaded.innerText = `Uploaded file: ${filename}`;
+        message = `**Uploaded file: ${filename}**\n\n\n` + message;
+    }
     
     const msgId = `msg_${Date.now()}_${Math.random()}`;
     addMessage(message, true, { id: msgId, timestamp: getCurrentTime() });
@@ -1162,12 +1159,12 @@ async function sendMessage(withTranscript = false) {
 
     if (withTranscript == true) {
         let full_transcript = document.getElementById("meeting-transcript").innerText;
-        message = `Query: ${message} Current meeting transcript: ${full_transcript}`;
-        console.log('Message sent (WITH transcript)');
+        message = `Conversation context: ${full_transcript} User Query: ${message}`;
+        // console.log('Message sent (WITH transcript)');
     }
-    else {
-        console.log('Message sent (no transcript)');
-    }
+    // else {
+    //     console.log('Message sent (no transcript)');
+    // }
     
     try {
         const response = await fetch('/api/chat', {
@@ -1177,7 +1174,8 @@ async function sendMessage(withTranscript = false) {
             },
             body: JSON.stringify({
                 message: message,
-                session_id: sessionId
+                session_id: sessionId,
+                fileAttached: filename
             })
         });
         
@@ -1199,7 +1197,7 @@ async function sendMessage(withTranscript = false) {
 
             if (data.response_type === 'chart') {
                 let valuesArray = await parseCsv(message);
-                console.log(valuesArray);
+                // console.log(valuesArray);
                 
                 const chartName = valuesArray[0];
                 const chartData = valuesArray[1];
@@ -1342,8 +1340,7 @@ function toggleFeed() {
     })
     .then(response => response.json())
     .then(data => {
-        // console.log("Video feed:", feedStatus.checked);
-        // Wait 3 seconds before enabling/disabling the buttons
+        // Wait 2 seconds before enabling/disabling the buttons
         setTimeout(function(){
             takeShot.disabled = feedStatus.checked ? false : true;
             toggleRecognition.disabled = feedStatus.checked ? false : true;
@@ -1367,7 +1364,6 @@ function screenShot() {
     })
     .then(response => response.json())
     .then(data => {
-        // console.log("Screenshot taken.");
         showNotification("Screenshot taken.");
         flash.style.display = 'none';
         if (data.img_src) {
@@ -1473,9 +1469,8 @@ submitFace.addEventListener('click', () => {
 
 const moreSettings = document.getElementById("cam-options");
 function clickOutCam(e) {
+    // Handler function when user clicks outside of cam options
     if (!e.target.closest("#cam-options") && !e.target.closest("#camOptions")) {
-        // moreSettings.style.display = 'none';
-        // document.removeEventListener('click', clickOutCam);
         hideSettings();
     }
 }
@@ -1523,11 +1518,9 @@ function showGallery() {
     moreSettings.style.display = 'none';
     if (gallery.style.display == 'none') {
         gallery.style.display = 'block';
-        // document.addEventListener('click', clickOutside);
     }
     else if (gallery.style.display == 'block') {
         gallery.style.display = 'none';
-        // document.removeEventListener('click', clickOutside);
     }
 }
 
@@ -1552,7 +1545,7 @@ function switchTab(element, event) {
     }
 }
 
-// swipe event handler on touch
+// Swipe event handler on touch devices
 let touchStartX = 0;
 let touchEndX = 0;
 
@@ -1571,11 +1564,8 @@ function swipeLeft() {
 }
 
 function toggleMeeting() {
-    // const meetingPanel = document.getElementById('meeting-view');
-    // const chatMessages = document.getElementById('chat-messages');
     hideSettings();
     if (meetingPanel.style.display == 'none') {
-        // chatMessages.style.display = 'none';
         meetingPanel.style.display = 'flex';
         document.addEventListener('touchstart', initialTouch);
         document.addEventListener('touchmove', finalTouch);
@@ -1583,7 +1573,6 @@ function toggleMeeting() {
     }
     else if (meetingPanel.style.display == 'flex') {
         meetingPanel.style.display = 'none';
-        // chatMessages.style.display = '';
         document.removeEventListener('touchstart', initialTouch);
         document.removeEventListener('touchmove', finalTouch);
         document.removeEventListener('touchend', swipeLeft);
@@ -1592,7 +1581,6 @@ function toggleMeeting() {
 
 function startFaceRecog() {
     recogStatus.checked = true;
-    // console.log("Face Recognition start.");
     toggleRecognition.style.background = 'rgb(177 63 63)';
     toggleRecognition.title = 'Disable facial recognition';
 
@@ -1646,10 +1634,8 @@ function toggleRecog() {
 };
 
 const fileDrop = document.getElementById("file_dropdown");
-let myChart = null;
+let myChart = new Array();
 function populateDropdown() {
-    // const response = fetch('/get_charts');
-
     fetch('/get_charts')
     .then(response => response.json())
     .then(data => {
@@ -1680,9 +1666,9 @@ function parseCsv(filename) {
 
 fileDrop.addEventListener('change', async () => {
     const filename = fileDrop.value;
-    if (myChart) {
-        myChart.destroy();
-    }
+    // if (myChart) {
+    //     myChart.destroy();
+    // }
     let valuesArray = await parseCsv(filename);
     // console.log("array:", valuesArray);
     const chartName = valuesArray[0];
@@ -1695,6 +1681,37 @@ fileDrop.addEventListener('change', async () => {
         createChart(chartName, chartData, labels);
     }
 });
+
+let myChartBox = null;
+function openLightbox(config) {
+    const lightbox = document.getElementById("chart-lightbox");
+    const chart_space = lightbox.querySelector('canvas');
+    if (myChartBox) {
+        myChartBox.destroy();
+    }
+
+    myChartBox = new Chart(
+        chart_space,
+        config
+    );
+
+    lightbox.style.display = 'flex';
+}
+
+document.addEventListener('click', (e) => {
+    const curr_chart = e.target.closest('canvas');
+    if (curr_chart != null && curr_chart.id !== 'lightbox') {
+        const chart_id = parseInt(curr_chart.id.slice(8));
+        // console.log("Selected Node:", myChart[chart_id]);
+        const config = myChart[chart_id].config._config
+        openLightbox(config);
+    }
+});
+
+function exitLightbox() {
+    const lightbox = document.getElementById("chart-lightbox");
+    lightbox.style.display = 'none';
+}
 
 function createChart(chartName, chartData, labels) {
     // console.log("Creating chart...");
@@ -1710,7 +1727,7 @@ function createChart(chartName, chartData, labels) {
             data: chartData, 
         }],
     };
-
+    // how to use time object as labels? then force 24 ticks
     const config = {
         type: 'bar',
         data: data,
@@ -1725,7 +1742,7 @@ function createChart(chartName, chartData, labels) {
                 x: {
                     title: {text: 'Timestamp', display: true}, 
                     reverse: false, min: 0, max: 24,
-                    ticks: {maxTicksLimit: 25},
+                    ticks: {stepSize: 1},
                     grid: {
                         color: function(context) {
                             if (context.tick.value == 7 || context.tick.value == 16) {
@@ -1757,21 +1774,22 @@ function createChart(chartName, chartData, labels) {
         }
     };
 
-    const chartNodes = document.querySelectorAll('canvas');
-    console.log(chartNodes);
-    let chart_space = null;
-    if (chartNodes.length > 1) {
-        const lastIndex = chartNodes.length - 1;
-        chart_space = chartNodes[lastIndex];
-    }
-    else {
-        const lastIndex = 0;
-        chart_space = chartNodes[lastIndex];
-    }
+    // const chartNodes = document.querySelectorAll('canvas');
+    // console.log(chartNodes);
+    // let chart_space = null;
+    // if (chartNodes.length > 1) {
+    //     const lastIndex = chartNodes.length - 1;
+    //     chart_space = chartNodes[lastIndex];
+    // }
+    // else {
+    //     const lastIndex = 0;
+    //     chart_space = chartNodes[lastIndex];
+    // }
+    let chart_space = document.querySelector(`#myChart_${curr_chart_id}`);
+    // chart_id += 1;
 
-    myChart = new Chart(
-        // document.getElementById('myChart'),
+    myChart.push(new Chart(
         chart_space,
         config
-    );
+    ));
 }

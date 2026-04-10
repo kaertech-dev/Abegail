@@ -765,6 +765,11 @@ body {
 
 .user .message-content {
     flex-direction: row-reverse;
+    /* max-width: 60%; */
+}
+
+.bot .message-content {
+    min-width: 50%;
 }
 
 /*.avatar {
@@ -975,12 +980,14 @@ body {
 
 .bubble table {
     border-collapse: collapse;
-    width: 60%;
+    /* width: 60%; */
+    margin-top: 10px;
 }
 
 .bubble td, th {
     border: 1px solid #8b8b8b;
     padding: 8px;
+    text-align: center;
 }
 
 .timestamp {
@@ -1029,6 +1036,11 @@ body {
 
 .badge.general {
     background: #9b59b6;
+    color: white;
+}
+
+.badge.others {
+    background: rgb(175 67 136);
     color: white;
 }
 
@@ -1423,6 +1435,45 @@ button.button-register {
     column-gap: 10px;
 }
 
+.chart-lightbox {
+    position: absolute;
+    height: 100%;
+    width: 100%;
+    background: rgba(105, 105, 105, 0.7);
+    flex-direction: row;
+    align-items: center;
+    z-index: 100;
+}
+
+.canvas-div {
+    width: 70%;
+    height: 60vh;
+    background: white;
+    margin: auto;
+    position: relative;
+    border-radius: 10px;
+}
+
+.exit-box {
+    height: 50px;
+    width: 50px;
+    border-radius: 50%;
+    border: none;
+    font-size: 25px;
+    position: absolute;
+    top: 0;
+    right: 0;
+}
+
+.exit-box:hover {
+    transform: scale(1.1);
+}
+
+.exit-box:active {
+    background: #086308;
+    transform: scale(0.95);
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     body {
@@ -1582,6 +1633,15 @@ button.button-register {
 
     .right-panel {
         width: 100%;
+    }
+
+    .canvas-div {
+        width: 100%;
+        height: 100%;
+    }
+
+    canvas {
+        max-width: 100%;
     }
 
 }

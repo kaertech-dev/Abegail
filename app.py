@@ -49,9 +49,9 @@ def get_local_ip():
     except:
         return "127.0.0.1"
 
-@app.route('/hometest')
-def new_index():
-    return render_template('home.html')
+# @app.route('/hometest')
+# def new_index():
+#     return render_template('home.html')
 
 @app.route('/')
 def index():
@@ -98,17 +98,18 @@ def chat():
         data = request.json
         message = data.get('message', '').strip()
         session_id = data.get('session_id', 'default')
+        fileAttached = data.get('fileAttached', '')
         result = None
         
-        if not message:
+        if not message and not fileAttached:
             return jsonify({'error': 'Empty message'}), 400
         
         # debug command parser here
         if 'launch camera' in message:
             return jsonify({'redirect': 'webcam', 'msg_type': 'bot', 'message': 'Launching video feed...'}), 302
         
-        message = message.replace('abigail', 'abegail')
-        message = message.replace('Abigail', 'Abegail')
+        # message = message.replace('abigail', 'abegail')
+        # message = message.replace('Abigail', 'Abegail')
         
         # Initialize managers
         session_mgr = get_session_manager()
@@ -177,14 +178,15 @@ def chat():
         # if current_session.user_name:
             # message = "User name: " + current_session.user_name + " \nQuestion: " + message
         # message = "Current query: " + message
+
+        # Attached file
+        if fileAttached or '.csv' in message:
+            # either message + file OR message includes filename
+            result = ask_with_file_parse(fileAttached, message)
         
         # Default: General AI response
         if not result:
-            # wrap message in a prompt??? '<user_name> is asking: <message>'
-            if ".csv" in message and os.path.exists(f'./csv_files/{message}'):
-                result = ask_with_file_parse(message)
-            else:
-                result = ask_general_question("Current query: " + message, relevant_context, current_session.user_name)
+            result = ask_general_question("Current query: " + message, relevant_context, current_session.user_name)
         
         # Create and add bot message
         csv_filename = result.get('csv_file', '')
@@ -271,10 +273,6 @@ def test_database():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/chart')
-def homepage():
-    return render_template('chartjs-example.html')
-
 @app.route('/get_charts', methods=['GET'])
 def giveChart():
     BASE_PATH = os.getcwd()
@@ -333,24 +331,6 @@ def cam_base():
                 known_faces.append(f"known_faces/{g.name}")
 
     return render_template('webcam.html', screenshots=screenshots, known_faces=known_faces)
-
-# @app.route('/get_images')
-# def get_status():
-#     """Used for loading images"""
-#     screenshots = []
-#     with os.scandir('webcam') as d:
-#         for e in d:
-#             if e.name[-4:] == '.jpg':
-#                 screenshots.append(f"webcam/{e.name}")
-#     screenshots.reverse()
-    
-#     known_faces = []
-#     with os.scandir('known_faces') as f:
-#         for g in f:
-#             if g.name[-4:] == '.jpg':
-#                 known_faces.append(f"known_faces/{g.name}")
-    
-#     return jsonify({"known_faces": known_faces, "screenshots": screenshots})
 
 @app.route('/webcam_update', methods=['POST'])
 def update_status():
