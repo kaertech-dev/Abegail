@@ -138,6 +138,26 @@ function initializeEventListeners() {
             showContextMenu(e, messageBubble);
         }
     });
+
+    const chatInput = document.getElementById("chatInput");
+    chatInput.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        document.getElementById("input-help").style.display = 'flex';
+        document.addEventListener('click', hideHelp);
+    });
+}
+
+function hideHelp(e) {
+    if (!e.target.closest('.input-help') && !e.target.closest('.help-entry')) {
+        document.getElementById("input-help").style.display = 'none';
+        document.removeEventListener('click', hideHelp);
+    }
+}
+
+function autoComplete(format) {
+    document.getElementById("chatInput").value = format;
+    document.getElementById("input-help").style.display = 'none';
+    document.removeEventListener('click', hideHelp);
 }
 
 function toggleTheme() {

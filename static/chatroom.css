@@ -179,6 +179,36 @@ body {
     padding: 5px;
 }
 
+.input-help {
+    background: white;
+    position: absolute;
+    position-anchor: --chat-input;
+    position-area: top;
+    display: flex;
+    flex-direction: column;
+    width: 35%;
+    border-radius: 10px 10px 0 0;
+    padding-bottom: 15px;
+    margin-bottom: -15px;
+}
+
+.help-entry {
+    padding: 10px 15px;
+    border-bottom: 1px solid lightgray;
+}
+
+.help-entry:last-of-type {
+    border-bottom: none;
+}
+
+.help-entry:hover {
+    background: lightgray;
+}
+
+.help-entry:active {
+    transform: scale(0.95);
+}
+
 .center-box {
     background: var(--main-contrast);
     min-height: 90vh;

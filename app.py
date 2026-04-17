@@ -12,15 +12,10 @@ import traceback
 
 from db_handler import get_db_handler
 from ai_handler import ask_general_question, ask_with_file_parse
-from quick_responses import check_quick_response, learn_from_conversation
+from quick_responses import learn_from_conversation
 from context_manager import get_context_manager
 from knowledge_base import get_knowledge_base
-from query_router import extract_database_name
 from session_manager import get_session_manager
-# from unified_mcp_client import get_sync_wrapper
-# from activity_routes import handle_activity_query
-# from attendance_routes import handle_attendance_query
-# from database_routes import handle_database_query
 
 import base64
 from speaker_recognition.recognizer import recognizer
@@ -35,7 +30,6 @@ camera = VideoCamera()
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST"]}})
 
-DEFAULT_DATABASE = "operators"
 CSV_BASE_PATH = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/csv_files/"
 AUDIO_PATH = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/voices_trained/"
 TRANSCRIPT_PATH = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/speechlogs/"
@@ -74,6 +68,7 @@ def index():
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
+    """Endpoint for handling file uploads"""
     if 'file' in request.files:
         input_file = request.files['file']
         if '.csv' in input_file.filename:
@@ -108,16 +103,12 @@ def chat():
         if 'launch camera' in message:
             return jsonify({'redirect': 'webcam', 'msg_type': 'bot', 'message': 'Launching video feed...'}), 302
         
-        # message = message.replace('abigail', 'abegail')
-        # message = message.replace('Abigail', 'Abegail')
-        
         # Initialize managers
         session_mgr = get_session_manager()
         context_mgr = get_context_manager()
         kb = get_knowledge_base()
         
         # Ensure session exists
-        # session_mgr.ensure_session_exists(session_id)
         current_session = session_mgr.get_session_object(session_id) # this retrieves the Session Object, or creates one if it doesn't exist
 
         name_match = re.search(r'my name is (\w+)', message, re.IGNORECASE)
@@ -127,37 +118,17 @@ def chat():
             # text = "Nice to meet you, " + name_match.group(1) + "! 👋 How can I assist you today? If you have any questions about attendance records or manufacturing activity, feel free to ask!"
             # result = {'answer': text, 'response_type': 'general'}
         
-        # Create and add user message
+        # Create user message object
         user_msg = session_mgr.create_message('user', message, session_id)
-        # session_mgr.add_message(session_id, user_msg)
-        
-        # Check for quick responses first
-        # quick_resp = check_quick_response(message)
-        # if quick_resp:
-        #     bot_msg = session_mgr.create_message('bot', quick_resp, session_id, 
-        #                                          user_msg['id'], response_type='quick')
-        #     session_mgr.add_message(session_id, bot_msg)
-        #     context_mgr.add_message(session_id, message, 'user')
-        #     context_mgr.add_message(session_id, quick_resp, 'bot')
-        #     learn_from_conversation(session_mgr.get_session(session_id))
-        #     return jsonify(bot_msg)
-        
-        # Add to context
-        # context_mgr.add_message(session_id, actual_message, 'user')
         
         # Get context and knowledge
-        # relevant_context = context_mgr.get_relevant_context(session_id, message, max_messages=5)
         relevant_context = current_session.get_relevant_context(message)
-        # print(relevant_context)
 
         # synchronous wrapper for unified mcp client
         # wrapper handles routing logic
         # unified client call appropriate server
         # merge ai handler to sync wrapper
         # unified_mcp_client = get_sync_wrapper()
-        
-        # Extract database name
-        database = extract_database_name(message) or DEFAULT_DATABASE
         
         # Route query to appropriate handler
         # result = None
@@ -169,15 +140,6 @@ def chat():
         # Priority 2: Attendance
         elif 'debug-att' in message:
             result = handle_attendance_query_via_mcp(message)
-        
-        # Priority 3: Database queries
-        # if not handler_response:
-        #     handler_response = handle_database_query(message, database, conversation_context, relevant_facts_text)
-        #     result = handler_response
-
-        # if current_session.user_name:
-            # message = "User name: " + current_session.user_name + " \nQuestion: " + message
-        # message = "Current query: " + message
 
         # Attached file
         if fileAttached or '.csv' in message:
@@ -188,18 +150,16 @@ def chat():
         if not result:
             result = ask_general_question("Current query: " + message, relevant_context, current_session.user_name)
         
-        # Create and add bot message
+        # Create bot message object
         csv_filename = result.get('csv_file', '')
         bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], 
                                                 response_type=result['response_type'], csv = csv_filename, with_chart = result.get('with_chart', False))
-        # session_mgr.add_message(session_id, bot_msg)
         current_session.update_history(message, result['answer'])
 
         # Update context and learning
         if 'Request timeout' not in result['answer']:
             if 'debug-att' in message or 'debug-act' in message:
                 message = message[10:]
-            # context_mgr.add_message(session_id, result, 'bot')
             context_mgr.update_history(session_id, message, result['answer'])
             learn_from_conversation(session_mgr.get_session(session_id))
         
@@ -283,7 +243,7 @@ def giveChart():
 
 @app.route('/chart/<path:csv_source>', methods=['GET', 'POST'])
 def parseCsv(csv_source):
-    """Chart viewer endpoint"""
+    """Process the given csv file to chart data"""
     try:
         # with open('./csv_files/Bryan_2026-02-01_2026-02-15.csv') as csvfile:
         with open('./csv_files/' + csv_source) as csvfile:
@@ -315,26 +275,26 @@ def parseCsv(csv_source):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/webcam', methods=['GET', 'POST'])
-def cam_base():
-    screenshots = []
-    with os.scandir('webcam') as d:
-        for e in d:
-            if e.name[-4:] == '.jpg':
-                screenshots.append(f"webcam/{e.name}")
-    screenshots.reverse()
+# @app.route('/webcam', methods=['GET', 'POST'])
+# def cam_base():
+#     screenshots = []
+#     with os.scandir('webcam') as d:
+#         for e in d:
+#             if e.name[-4:] == '.jpg':
+#                 screenshots.append(f"webcam/{e.name}")
+#     screenshots.reverse()
     
-    known_faces = []
-    with os.scandir('known_faces') as f:
-        for g in f:
-            if g.name[-4:] == '.jpg':
-                known_faces.append(f"known_faces/{g.name}")
+#     known_faces = []
+#     with os.scandir('known_faces') as f:
+#         for g in f:
+#             if g.name[-4:] == '.jpg':
+#                 known_faces.append(f"known_faces/{g.name}")
 
-    return render_template('webcam.html', screenshots=screenshots, known_faces=known_faces)
+#     return render_template('webcam.html', screenshots=screenshots, known_faces=known_faces)
 
 @app.route('/webcam_update', methods=['POST'])
 def update_status():
-    """Handles commands/toggles"""
+    """Handle webcam inputs"""
     if request.is_json:
         data = request.get_json()
         # print(data)

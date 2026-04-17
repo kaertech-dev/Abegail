@@ -33,6 +33,19 @@
             <div class="search-results" id="searchResults"></div>
         </div>
 
+        <div class="input-help" id="input-help" style="display: none;">
+            <!-- <div class="help-entry" onclick="autoComplete('is <employee name> present?')">"Is &lt;employee name&gt; present?"</div>
+            <div class="help-entry" onclick="autoComplete('how many operators are on time?')">"How many operators are on time?"</div> -->
+            <div class="help-entry" onclick="autoComplete('process flow for <schema> <model> <date>')">"process flow for &lt;schema&gt; &lt;model&gt;"</div>
+            <div class="help-entry" onclick="autoComplete('get wip for <schema> <model> <PO number> <date>')">"get wip for &lt;schema&gt; &lt;model&gt; &lt;PO number&gt;"</div>
+            <div class="help-entry" onclick="autoComplete('serial query <number>')">"serial query &lt;serial number&gt;"</div>
+            <div class="help-entry" onclick="autoComplete('running models <date>')">"running models"</div>
+            <div class="help-entry" onclick="autoComplete('active projects')">"active projects"</div>
+            <div class="help-entry" onclick="autoComplete('station details for <schema> <model> <station> <date>')">"station details for &lt;schema&gt; &lt;model&gt; &lt;station&gt;"</div>
+            <div class="help-entry" onclick="autoComplete('list all PO for <schema> <model>')">"list all PO for &lt;schema&gt; &lt;model&gt;"</div>
+            <div class="help-entry" onclick="autoComplete('last running PO for <schema> <model>')">"last running PO for &lt;schema&gt; &lt;model&gt;"</div>
+        </div>
+
         <div class="more-inputs" id="more-inputs" style="display: none;">
             <input type="file" name="file" id="file-input" class="hidden-input">
             <button id="attachButton" onclick="selectFile()" title="Attach files">
@@ -165,8 +178,8 @@
                 <button id="chatOptions" onclick="showMoreInputs()" style="anchor-name: --more-inputs;" title="More input options">
                     <i class="fa-solid fa-plus"></i>
                 </button>
-                <input type="text" id="chatInput" 
-                    placeholder="(Press Enter to send, Shift+Enter for new line)" 
+                <input type="text" id="chatInput" style="anchor-name: --chat-input; z-index: 10;"
+                    placeholder="(Shift+Enter for new line, Right-click for input format help)" 
                     onkeypress="handleKeyPress(event)">
                 <button id="chatSend" onclick="sendMessage()" title="Send (Enter)">
                     <i class="fas fa-paper-plane"></i>

@@ -1,5 +1,6 @@
 import re
 from datetime import date, time, timedelta
+import calendar
 from typing import Dict, Optional, List
 
 month_names = ["january", "february", "march", "april", "may", "june",
@@ -10,10 +11,10 @@ month_names = ["january", "february", "march", "april", "may", "june",
 def keyword_check(message: str) -> List[str]:
     date_list = []
     today = date.today()
-    day_of_week = date.today().weekday() + 1 #days from closest Sunday
 
-    week_match = re.search(r'last\s+(\d*)\s*weeks?', message, re.IGNORECASE)
+    week_match = re.search(r'(?:l|p)ast\s+(\d*)\s*weeks?', message, re.IGNORECASE)
     if week_match:
+        day_of_week = today.weekday() + 1 #days from closest Sunday
         num_weeks = int(week_match.group(1)) if week_match.group(1) else 1
         end_date = today - timedelta(days=day_of_week)
         start_date = end_date - timedelta(days=(num_weeks*7)-1)
@@ -26,13 +27,26 @@ def keyword_check(message: str) -> List[str]:
         date_list.append(today.isoformat())
     elif 'yesterday' in message:
         date_list.append((today - timedelta(days=1)).isoformat())
-    # elif 'last week' in message:
-    #     date_list.append((today - timedelta(days=7)).isoformat())
-    #     date_list.append(today.isoformat())
-    elif match := re.search(r'last\s+(\d+)\s+days?', message, re.IGNORECASE):
+    elif match := re.search(r'(?:l|p)ast\s+(\d+)\s+days?', message, re.IGNORECASE):
         days = int(match.group(1))
         date_list.append((today - timedelta(days=days)).isoformat())
         date_list.append(today.isoformat())
+    elif match := re.search(r'this week', message, re.IGNORECASE):
+        day_of_week = today.weekday()
+        start_date = today - timedelta(days=day_of_week)
+        date_list.append(start_date)
+        date_list.append(today.isoformat())
+    elif match := re.search(r'this month', message, re.IGNORECASE):
+        num_days = today.day - 1
+        start_date = today - timedelta(days=num_days)
+        date_list.append(start_date)
+        date_list.append(today.isoformat())
+    elif match := re.search(r'(?:last|previous) month', message, re.IGNORECASE):
+        prev = today.month - 1
+        _, last_day = calendar.monthrange(today.year, prev)
+        start_date = date(year=today.year, month=prev, day=1)
+        end_date = date(year=today.year, month=prev, day=last_day)
+        date_list.append(start_date, end_date)
 
     return date_list
 
