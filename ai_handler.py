@@ -10,10 +10,10 @@ from date_parser import extractDate
 from mcp_activity_server import ActivityAPI
 from mcp_attendance_client import get_attendance_service
 from mcp_attendance_server import AttendanceDB
-from kts_data_handler import ProductionDB
+from kts_data_handler import ProductionDB, getProdArgs
 
-DEFAULT_MODEL = 'deepseek-r1:14b'
-# DEFAULT_MODEL = 'deepseek-r1:8b'
+# DEFAULT_MODEL = 'deepseek-r1:14b'
+DEFAULT_MODEL = 'deepseek-r1:8b'
 
 path_name = './csv_files/'
 filename = ''
@@ -139,8 +139,7 @@ def query_processor(message: str):
     activity_keywords = [
         'activity', 'activities', 'monitoring', 'where is',
         'what are they doing', 'who is doing', 'doing', 'working',
-        'productivity', 'output', 'cycle time', 'target', 'start time', 'end time',
-        'station', 'customer', 'model', 'operator'
+        'productivity', 'output', 'cycle time', 'target', 'start time', 'end time', 'operator'
     ]
 
     for kw in activity_keywords:
@@ -172,7 +171,7 @@ Examples: (Question: "Check Ranbill attendance", Answer: "Tool=individual_attend
 Answer:
 Tool=
 Employee="""
-    ai_response = handler_deepseek(ai_input, 'deepseek-r1:1.5b')
+    ai_response = handler_deepseek(ai_input, 'deepseek-r1:7b')
     print(ai_response)
     return ai_response
 
@@ -260,42 +259,162 @@ def attendance_handler(question: str, tool_call: str, default_name: str) -> dict
     else:
         return {'answer': result, 'response_type': 'attendance'}
 
-def kts_handler(question: str):
+def kts_handler_old(question: str, handler: str = '', key: str = ''):
     prodData = ProductionDB()
     result = ''
+    filename = ''
 
-    if 'get process flow' in question:
-        gpf_match = re.search(r'get process flow for schema (\w+) model (\w+)', question)
+    if noun_match := re.search(r'Proper Nouns: \[(.*)\]', handler, re.IGNORECASE):
+        raw_nouns = noun_match.group(1).split()
+        nouns = []
+        for nn in raw_nouns:
+            nn = nn.strip(",'. ").strip('"').lower()
+            if nn != 'po':
+                nouns.append(nn)
+        
+        # print(nouns)
+
+    if 'process flow' in question.lower() or key == 'process flow':
+        gpf_match = re.search(r'get process flow for (?:schema)?\s*(\w+) (?:model)?\s*(\w+)', question, re.IGNORECASE)
         if gpf_match:
             result = prodData.getProcessFlow(gpf_match.group(1), gpf_match.group(2))
-
-    elif 'serial query' in question:
-        serial_match = re.search(r'K\d{11}', question)
-        if serial_match:
-            result = prodData.serialQuery(serial_match.group(0))
-
-    elif 'get wip' in question:
-        date_input = extractDate(question)
-        wip_match = re.search(r'get wip for schema (\w+) model (\w+) PO (\w+)', question)
-        if wip_match:
-            result = prodData.getWIP(wip_match.group(1), wip_match.group(2), wip_match.group(3), date_input[0])
+        elif len(nouns) > 1:
+            result = prodData.getProcessFlow(nouns[0], nouns[1])
+        else:
+            result = "Parse error. Please use this input format:\n\nget process flow for schema {name} model {name}"
     
-    return result
+    elif 'active projects' in question.lower() or key == 'active projects':
+        result = prodData.getActiveProjects()
+    
+    elif 'running models' in question.lower() or key == 'running models':
+        date_input = extractDate(question)
+        result = prodData.getRunningModels(date_input)
+    
+    elif 'list all po' in question.lower() or key == 'list all PO':
+        if po_match := re.search(r'for (?:schema)?\s*(\w+) (?:model)?\s*(\w+)', question, re.IGNORECASE):
+            result = prodData.listPO(po_match.group(1), po_match.group(2))
+        elif len(nouns) > 1:
+            result = prodData.listPO(nouns[0], nouns[1])
+    
+    elif 'last running' in question.lower() or key == 'last running PO':
+        if po_match := re.search(r'for (?:schema)?\s*(\w+) (?:model)?\s*(\w+)', question, re.IGNORECASE):
+            result = prodData.getLatestPO(po_match.group(1), po_match.group(2))
+        elif len(nouns) > 1:
+            result = prodData.getLatestPO(nouns[0], nouns[1])
+
+    elif 'serial query' in question.lower() or key == 'serial query':
+        if serial_match := re.search(r'K\d{11}', question, re.IGNORECASE):
+            result = prodData.serialQuery(serial_match.group(0))
+        else:
+            result = "Invalid serial number format."
+
+    elif 'get wip' in question.lower() or key == 'get wip':
+        date_input = extractDate(question)[0]
+        shift_match = re.search(r'shift (\w{1})', question, re.IGNORECASE)
+        wip_match = re.search(r'get wip for (?:schema)?\s*(\w+) (?:model)?\s*(\w+) (?:PO)?\s*(\w+)', question, re.IGNORECASE)
+        if wip_match:
+            if shift_match:
+                result = prodData.getWIP(wip_match.group(1), wip_match.group(2), wip_match.group(3), date_input, shift_match.group(1))
+            else:
+                result = prodData.getWIP(wip_match.group(1), wip_match.group(2), wip_match.group(3), date_input)
+        elif len(nouns) > 2:
+            result = prodData.getWIP(nouns[0], nouns[1], nouns[2], date_input)
+        else:
+            result = "Parse error. Please use this input format:\n\nget wip for schema {name} model {name} PO {number}"
+    
+    elif 'station details' in question.lower() or key == 'station details':
+        # query database for entries between the given date range
+        date_input = extractDate(question)
+        if full_match := re.search(r'station details for (?:schema)?\s*(\w+) (?:model)?\s*(\w+) (?:station)?\s*(\w+)', question, re.IGNORECASE):
+            result, filename = prodData.getStationDetails(full_match.group(1), full_match.group(2), full_match.group(3), date_input)
+        elif len(nouns) > 2:
+            result, filename = prodData.getStationDetails(nouns[0], nouns[1], nouns[2], date_input)
+    
+    return {'answer': result, 'csv_file': filename, 'response_type': 'KTS'}
+
+ktsData = ProductionDB()
+def kts_handler(question: str):
+    if getProdArgs().command == 'serial query':
+        if serial_match := re.search(r'K\d{11}', question, re.IGNORECASE):
+            getProdArgs().serial = serial_match.group(0)
+    
+    if getProdArgs().check():
+        # No need to go through the rest if arguments are already complete at this point
+        return ktsData.execute(getProdArgs().command, getProdArgs())
+
+    found_models = []
+    # Search query for given schema and/or model
+    if getProdArgs().schema == '' or getProdArgs().model == '':
+        for schema, models in ktsData.models.items():
+            found_models = [m for m in models if m in question]
+            if found_models:
+                if not getProdArgs().schema:
+                    getProdArgs().schema = schema
+                getProdArgs().model = found_models[0]
+            elif schema in question:
+                getProdArgs().schema = schema
+                return {'answer': f"Available models for {schema}: " + ', '.join(models), 'response_type': 'KTS'}
+    
+    if getProdArgs().command == 'get wip' and getProdArgs().model and not getProdArgs().po_num:
+        # Search query for PO argument
+        po_list = ktsData._show_all_PO(getProdArgs().schema, getProdArgs().model)
+        # print(po_list)
+        found_po = [po['po_num'] for po in po_list if po['po_num'] in question]
+        if not found_po:
+            error = "Available PO: \n" + ', '.join([entry['po_num'] for entry in po_list])
+        else:
+            getProdArgs().po_num = found_po[0]
+    elif getProdArgs().command == 'station details' and getProdArgs().model and not getProdArgs().station:
+        # Search query for station argument
+        process_list = ktsData._get_columns(getProdArgs().schema, getProdArgs().model)
+        found_proc = [val for val in process_list if val in question]
+        if not found_proc:
+            error = "Process Flow: \n" + ', '.join([val for val in process_list])
+        else:
+            getProdArgs().station = found_proc[0]
+    
+    # print("Obj class:", getProdArgs())
+
+    if getProdArgs().check():
+        return ktsData.execute(getProdArgs().command, getProdArgs())
+    else:
+        try:
+            return {'answer': error, 'response_type': 'KTS'}
+        except:
+            # Under the assumption that all kts-related query are properly supported, so an Exception must mean query is not kts-related
+            getProdArgs().clear()
+            return 'not kts related'
 
 def ask_general_question(question: str, context: Optional[List], default_name: Optional[str]):
-    """Enhanced general question handler with reasoning and GPU optimization"""
+    """Question handler with reasoning"""
     MODEL_NAME = _get_model_name()
 
-    if 'get process flow' in question or 'serial query' in question or 'get wip' in question:
-        return {'answer': kts_handler(question), 'response_type': 'KTS'}
+    KTS_keywords = ['process flow', 'active projects', 'running models', 'serial query', 'get wip', 'station details', 'list all PO', 'last running PO']
+    
+    # if 'debug' in question:
+    #     question = question.replace('debug', '')
+    #     if any(kw in question.lower() for kw in KTS_keywords.keys()):
+    #         return kts_handler(question)
     
     context_section = f" Recent conversation: {context}\n" if context else ""
-    # print(context_section)
     
     handler_response = {}
+    mcp_section = ''
     filename = ''
+    kts_result = None
+
+    # Check if input chaining, then skip intent determination
+    # if stored_values:
+    if getProdArgs().command != '':
+        kts_result = kts_handler(question)
+        # print("Chaining: ", kts_result)
+    
+    if kts_result is not None and kts_result != 'not kts related':
+        return kts_result
+
     query_type = query_processor(question)
     if query_type == 'attendance':
+        # Attendance Query
         tool_call = query_processor_LLM(str(context) + question)
         handler_response = attendance_handler(question, tool_call, default_name)
 
@@ -304,16 +423,27 @@ def ask_general_question(question: str, context: Optional[List], default_name: O
         else:
             mcp_section = f"Attendance Records: {handler_response['error']}"
     elif query_type == 'activity':
+        # Activity Query
         handler_response = activity_handler(question)
         if handler_response.get('answer'):
             return handler_response
         mcp_section = f"Activity Records: {handler_response['raw_records']}"
         filename = handler_response['csv_file']
-    else:
-        mcp_section = ''
+    elif getProdArgs().command == '' and kts_result is None:
+        # KTS query intent determination
+        kts_prompt = f"User: {question} Intent: {KTS_keywords} Instruction: Determine the intent of the user from the list of available options. Be concise and output only what is needed."
+        handler = handler_deepseek(kts_prompt)
+        print(handler)
+        for key in KTS_keywords:
+            if key in handler.lower():
+                getProdArgs().command = key
+                getProdArgs().date_time = extractDate(question)
+                kts_result = kts_handler(question)
+        
+        if kts_result != 'not kts related':
+            return kts_result
     
-    # >>>> separate prompts for activity and general
-    full_prompt = f"""You are Abegail, an AI assistant for monitoring attendance and manufacturing activity. You can also answer queries about general information.
+    full_prompt = f"""You are Abegail, an AI assistant for monitoring attendance and manufacturing activity. You can also handle general queries and other requests.
 
 {context_section}
 {mcp_section}
@@ -322,7 +452,7 @@ def ask_general_question(question: str, context: Optional[List], default_name: O
 Instructions:
 1. Be informative, concise, and friendly.
 2. Use markdown formatting for better readability.
-3. Provide specific examples from the given data.
+3. Provide specific examples from the given data if possible.
 {handler_response.get('instructions', '')}
 
 Answer:"""
