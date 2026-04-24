@@ -136,8 +136,8 @@ class AttendanceMCPClient():
         result = await self.session.call_tool("count_present_operators", arguments)
         return result.content[0].text if result.content else "No response"
 
-    async def department_headcount(self, dept_str: str, date_str: Optional[str] = None,
-                                     start_time: str = "07:00") -> str:
+    async def department_headcount(self, dept_str: str, date_str: str = None,
+                                     start_time: str = '') -> str:
         """
         Count present employees in the given department after a specific time
         
@@ -255,8 +255,8 @@ class AttendanceService:
             return await self._client.count_present_operators(date_str, start_time)
         return self._run_async(_count())
     
-    def department_headcount(self, dept_str: str, date_str: Optional[str] = None,
-                               start_time: str = "07:00") -> str:
+    def department_headcount(self, dept_str: str, date_str: str = None,
+                               start_time: str = None) -> str:
         """Count operators (sync)"""
         async def _count():
             await self._ensure_connected()
@@ -458,6 +458,7 @@ def handle_attendance_query_via_mcp(message: str) -> None | dict[str, str]:
         
         elif query_type == 'dep_headcount':
             curr_time = str(datetime.now().time())
+            print("Current time", curr_time)
             answer = service.department_headcount(
                 params.get('department'),
                 params.get('date'),

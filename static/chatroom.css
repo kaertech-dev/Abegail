@@ -105,29 +105,64 @@ body {
     overflow: hidden;
 }
 
-/* .chat-container {
-    width: 900px;
-    height: 85vh;
-    margin-bottom: 50px;
-    background: var(--container-bg);
-    border-radius: 20px;
-    box-shadow: 0 20px 60px var(--shadow);
+.mini-game {
+    position: absolute;
+    right: 0;
+    padding: 10px;
+    height: fit-content;
+    width: fit-content;
+    background: lightgray;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    transition: all 0.3s ease;
-} */
+}
 
-/* .chat-header {
-    background: var(--main-contrast);
-    color: white;
-    padding: 20px;
+.game-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    position: relative;
-    z-index: 10;
-} */
+    flex-direction: row;
+    justify-content: space-around;
+    align-content: center;
+    height: 30px;
+}
+
+.main-box {
+    display: grid;
+    padding: 10px;
+    grid-template-rows: repeat(10, 30px);
+    grid-template-columns: repeat(10, 30px);
+    grid-gap: 2px;
+}
+
+.main-box > p {
+    background: rgb(136, 136, 136);
+    color: rgb(136, 136, 136);
+    height: 30px;
+    width: 30px;
+}
+
+.main-box > p:hover {
+    background: white;
+    color: white;
+}
+
+.main-box > p.opened {
+    background: rgb(240, 240, 240);
+    color: black;
+}
+
+.main-box > p.flagged {
+    background: yellow;
+    color: yellow;
+}
+
+.main-box > p.defeat {
+    background: red;
+    color: black;
+}
+
+.main-box > p.victory {
+    background: green;
+    color: black;
+}
 
 .popUpButtons {
     z-index: 10;
@@ -1044,12 +1079,12 @@ body {
     display: inline-block;
     padding: 2px 8px;
     border-radius: 10px;
-    font-size: 10px;
+    font-size: 10.5px;
     margin-left: 5px;
     font-weight: bold;
 }
 
-.badge.edited {
+/* .badge.edited {
     background: var(--warning-color);
     color: white;
 }
@@ -1062,15 +1097,30 @@ body {
 .badge.company {
     background: var(--success-color);
     color: white;
+} */
+
+.badge.attendance {
+    background: var(--success-color);
+    color: white;
+}
+
+.badge.activity {
+    background: #67970d;
+    color: white;
+}
+
+.badge.kts {
+    background: #125b7b;
+    color: white;
 }
 
 .badge.general {
-    background: #9b59b6;
+    background: #7c10a7;
     color: white;
 }
 
 .badge.others {
-    background: rgb(175 67 136);
+    background: rgb(202, 39, 39);
     color: white;
 }
 

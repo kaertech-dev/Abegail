@@ -37,6 +37,213 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fontSizeValue').textContent = `${fontSize}px`;
 });
 
+function launchGame() {
+    const gamebox = document.getElementById('mini-game');
+    const playArea = document.getElementById('main-box');
+    if (gamebox.style.display == 'none') {
+        gamebox.style.display = 'flex';
+        generate();
+        // playArea.onclick = (event) => uncover(event);
+    } else {
+        gamebox.style.display = 'none';
+        playArea.innerHTML = '';
+        playArea.removeEventListener('click', uncover);
+    }
+}
+
+function assignClues(cell) {
+    const around = []
+    if (cell % 10 == 1) {
+        // left edge
+        around.push(...[cell-10, cell-10+1, cell+1, cell+10, cell+10+1]);
+    }
+    else if (cell % 10 == 0) {
+        // right edge
+        around.push(...[cell-10-1, cell-10, cell-1, cell+10-1, cell+10]);
+    }
+    else {
+        around.push(...[cell-10-1, cell-10, cell-10+1, cell-1, cell+1, cell+10-1, cell+10, cell+10+1]);
+    }
+    // const around = [cell-10-1, cell-10, cell-10+1, cell-1, cell+1, cell+10-1, cell+10, cell+10+1];
+    for (let curr_cell of around) {
+        if (curr_cell > 0 && curr_cell < 101) {
+            const child = document.querySelector(`#main-box :nth-child(${curr_cell})`);
+            if (child.dataset.txt == '') {
+                child.dataset.txt = '1';
+            } else {
+                const ctr = parseInt(child.dataset.txt);
+                child.dataset.txt = ctr + 1;
+            }
+        }
+    }
+}
+
+let win_condition = 100;
+function generate() {
+    const playArea = document.getElementById('main-box');
+    playArea.innerHTML = '';
+    win_condition = 100;
+    for (let i=0; i<100; i++) {
+        const cell = document.createElement('p');
+        cell.dataset.txt = '';
+        cell.dataset.id = i+1;
+        playArea.appendChild(cell);
+    }
+
+    let mine_ctr = 10;
+    const flagCount = document.getElementById('flag-count');
+    flagCount.innerText = 'Flags: ' + mine_ctr;
+    
+    while (mine_ctr > 0) {
+        const num = Math.floor(Math.random()*100) + 1;
+        const curr_child = document.querySelector(`#main-box :nth-child(${num})`);
+        if (curr_child.dataset.txt == '') {
+            curr_child.dataset.txt = 'X';
+            assignClues(num);
+            mine_ctr -= 1;
+        }
+    }
+
+    playArea.onclick = (event) => uncover(event);
+}
+
+function flagMode() {
+    const state = document.getElementById('flag-state');
+    const flagButton = document.getElementById('flag-toggle');
+    if (state.checked) {
+        state.checked = false;
+        flagButton.style.background = 'white';
+    } else {
+        state.checked = true;
+        flagButton.style.background = 'green';
+    }
+}
+
+function endGame(color) {
+    const playArea = document.getElementById('main-box');
+    const all_child = playArea.querySelectorAll('p');
+    const flagCount = document.getElementById('flag-count');
+
+    playArea.onclick = null;
+
+    for (let cell of all_child) {
+        if (cell.dataset.txt == 'X') {
+            cell.classList.add(color);
+        }
+        else {
+            cell.classList.add('opened');
+        }
+        cell.innerText = cell.dataset.txt;
+    }
+
+    if (color == 'defeat') {
+        flagCount.innerText = 'Game Over';
+    }
+    else if (color == 'victory') {
+        flagCount.innerText = 'You Win!!';
+    }
+}
+
+function spread(cell) {
+    const playArea = document.getElementById('main-box');
+
+    let num = cell-10;
+    while (num > 0 && num < 101) {
+        const curr_cell = playArea.querySelector(`#main-box :nth-child(${num})`);
+        if (curr_cell.dataset.txt != '') {
+            stopFlag = true;
+            break;
+        }
+        curr_cell.classList.add('opened');
+        curr_cell.innerText = curr_cell.dataset.txt;
+        num -= 10;
+    }
+
+    num = cell+10;
+    while (num > 0 && num < 101) {
+        const curr_cell = playArea.querySelector(`#main-box :nth-child(${num})`);
+        if (curr_cell.dataset.txt != '') {
+            stopFlag = true;
+            break;
+        }
+        curr_cell.classList.add('opened');
+        curr_cell.innerText = curr_cell.dataset.txt;
+        num += 10;
+    }
+
+    num = cell-1;
+    while (num%10 > 0) {
+        const curr_cell = playArea.querySelector(`#main-box :nth-child(${num})`);
+        if (curr_cell.dataset.txt != '') {
+            stopFlag = true;
+            break;
+        }
+        curr_cell.classList.add('opened');
+        curr_cell.innerText = curr_cell.dataset.txt;
+        num -=1;
+    }
+
+    num = cell;
+    while (Math.trunc(num/10) == Math.trunc(cell/10)) {
+        num += 1;
+        const curr_cell = playArea.querySelector(`#main-box :nth-child(${num})`);
+        if (curr_cell.dataset.txt != '') {
+            stopFlag = true;
+            break;
+        }
+        curr_cell.classList.add('opened');
+        curr_cell.innerText = curr_cell.dataset.txt;
+    }
+}
+
+function uncover(e) {
+    const target = e.target.closest('p');
+    if (target == null) return;
+
+    const flagCtr = document.getElementById('flag-count');
+    const num = flagCtr.innerText.match(/\d+/);
+    let flag_count = parseInt(num[0]);
+    const useFlag = document.getElementById('flag-state');
+
+    if (useFlag.checked) {
+        if ((target.classList.length == 0) && flag_count > 0) {
+            // target.style.color = 'yellow';
+            // target.style.background = 'yellow';
+            target.classList.add('flagged');
+            win_condition -= 1;
+            flag_count -= 1;
+            flagCtr.innerText = 'Flags: ' + flag_count;
+        }
+        else if (target.classList.contains('flagged')) {
+            // target.style.color = 'white';
+            // target.style.background = 'white';
+            target.classList.remove('flagged');
+            win_condition += 1;
+            flag_count += 1;
+            flagCtr.innerText = 'Flags: ' + flag_count;
+        }
+    }
+    else if (target.classList.length == 0) {
+        // target.style.color = 'black';
+        // target.style.background = 'gray';
+        target.classList.add('opened');
+        target.innerText = target.dataset.txt;
+        win_condition -= 1;
+        if (target.dataset.txt == 'X') {
+            endGame('defeat');
+        }
+        else if (target.dataset.txt == '') {
+            spread(parseInt(target.dataset.id));
+        }
+    }
+
+    // win_condition -= 1;
+    // console.log(win_condition);
+    if (win_condition == 0) {
+        endGame('victory');
+    }
+}
+
 function getCurrentTime() {
     const now = new Date();
     return now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -594,14 +801,27 @@ function cancelFile() {
 }
 
 async function downloadCSV(filename) {
-    try{
-        window.location.href = "api/download/" + filename;
-        showNotification("Downloading csv...");
-        playSound('success');
-    } catch (error) {
-        console.error('Export error:', error);
-        showNotification('Failed to download csv', 'error');
+    // find all .csv in the filename
+    const file_array = filename.split(" ");
+    // console.log(file_array);
+    for (let entry of file_array){
+        try{
+            window.location.href = "api/download/" + entry;
+            showNotification("Downloading csv...");
+            playSound('success');
+        } catch (error) {
+            console.error('Export error:', error);
+            showNotification('Failed to download csv', 'error');
+        }
     }
+    // try{
+    //     window.location.href = "api/download/" + filename;
+    //     showNotification("Downloading csv...");
+    //     playSound('success');
+    // } catch (error) {
+    //     console.error('Export error:', error);
+    //     showNotification('Failed to download csv', 'error');
+    // }
     
     hideContextMenu();
 }
@@ -914,12 +1134,16 @@ function addMessage(message, isUser = false, metadata = {}) {
     //     badges += '<span class="badge regenerated">Regenerated</span>';
     // }
 
-    if (metadata.response_type === 'activity' || metadata.response_type === 'attendance' || metadata.response_type === 'KTS') {
-        badges += '<span class="badge company">Company Data</span>';
+    if (metadata.response_type === 'activity') {
+        badges = '<span class="badge activity">Activity</span>';
+    }else if (metadata.response_type === 'attendance') {
+        badges = '<span class="badge attendance">Attendance</span>';
+    }else if (metadata.response_type === 'KTS') {
+        badges = '<span class="badge kts">Traceability</span>';
     }else if (metadata.response_type === 'general') {
-        badges += '<span class="badge general">General</span>';
+        badges = '<span class="badge general">General</span>';
     }else if (metadata.response_type) {
-        badges += `<span class="badge others">${metadata.response_type}</span>`;
+        badges = `<span class="badge others">${metadata.response_type}</span>`;
     }
     
     const editButton = isUser ? `
@@ -929,17 +1153,6 @@ function addMessage(message, isUser = false, metadata = {}) {
     ` : '';
 
     const bubbleClass = metadata.edited ? 'bubble edited' : metadata.regenerated ? 'bubble regenerated' : 'bubble';
-
-    let csvButton = '';
-    if (metadata.csv && isUser == false) {
-        const chartButton = metadata.with_chart ? `<button type="button" class="download-csv" onclick="viewChart('${metadata.csv}')">View chart</button>` : '';
-        csvButton = `
-            <div class="csv-action">
-                <button type="button" class="download-csv" onclick="downloadCSV('${metadata.csv}')" title="download csv">Download csv file</button>
-                ${chartButton}
-            </div>
-        `;
-    }
     
     // Render markdown if available
     let messageContent = escapeHtml(message);
@@ -969,12 +1182,41 @@ function addMessage(message, isUser = false, metadata = {}) {
     <canvas id="myChart_${chart_id}"></canvas>
 </div>`;
     }
+
+    let csvButton = '';
+    const fileArray = [];
+    if (metadata.csv){
+        fileArray.push(...metadata.csv.split(" "));
+        console.log(fileArray);
+    }
+    
+    if (metadata.csv && fileArray.length == 1 && isUser == false) {
+        const chartButton = metadata.with_chart ? `<button type="button" class="download-csv" onclick="viewChart('${metadata.csv}')">View chart</button>` : '';
+        csvButton = `
+            <div class="csv-action">
+                <button type="button" class="download-csv" onclick="downloadCSV('${metadata.csv}')" title="download csv">Download csv file</button>
+                ${chartButton}
+            </div>
+        `;
+    }
+
+    // build messagecontent + button pairing
+    else if (metadata.csv && fileArray.length > 1 && isUser == false) {
+        for (let entry of fileArray) {
+            // console.log(entry);
+            let new_button = `
+            <div class="csv-action">
+                <button type="button" class="download-csv" onclick="downloadCSV('${entry}')" title="download csv">Download csv file</button>
+            </div>`;
+            messageContent = messageContent.replace("<p> placeholder </p>", new_button);
+        }
+    }
     
     messageDiv.innerHTML = `
         <div class="message-content">
             <div class="avatar ${avatarClass}">${avatarContent}</div>
             <div style="flex: 1;">
-                <div class="${bubbleClass}" data-original="${escapeHtml(message)}">
+                <div class="${bubbleClass}">
                     ${messageContent}
                     ${csvButton}
                     ${chart_viewer}
@@ -1653,22 +1895,22 @@ function toggleRecog() {
     }
 };
 
-const fileDrop = document.getElementById("file_dropdown");
-let myChart = new Array();
-function populateDropdown() {
-    fetch('/get_charts')
-    .then(response => response.json())
-    .then(data => {
-        const list = data.charts;
-        list.forEach(element => {
-            const option = document.createElement("option");
-            option.textContent = `${element}`;
-            option.value = element;
-            fileDrop.appendChild(option);
-        });
-    })
-    .catch(error => console.error('Error:', error));
-}
+// const fileDrop = document.getElementById("file_dropdown");
+// let myChart = new Array();
+// function populateDropdown() {
+//     fetch('/get_charts')
+//     .then(response => response.json())
+//     .then(data => {
+//         const list = data.charts;
+//         list.forEach(element => {
+//             const option = document.createElement("option");
+//             option.textContent = `${element}`;
+//             option.value = element;
+//             fileDrop.appendChild(option);
+//         });
+//     })
+//     .catch(error => console.error('Error:', error));
+// }
 
 // populateDropdown();
 
@@ -1684,23 +1926,19 @@ function parseCsv(filename) {
     .catch(error => console.error('Error:', error));
 }
 
-fileDrop.addEventListener('change', async () => {
-    const filename = fileDrop.value;
-    // if (myChart) {
-    //     myChart.destroy();
-    // }
-    let valuesArray = await parseCsv(filename);
-    // console.log("array:", valuesArray);
-    const chartName = valuesArray[0];
-    const chartData = valuesArray[1];
-    const labels = valuesArray[2];
-    if (!chartData) {
-        console.log("Error creating chart");
-    }
-    else{
-        createChart(chartName, chartData, labels);
-    }
-});
+// fileDrop.addEventListener('change', async () => {
+//     const filename = fileDrop.value;
+//     let valuesArray = await parseCsv(filename);
+//     const chartName = valuesArray[0];
+//     const chartData = valuesArray[1];
+//     const labels = valuesArray[2];
+//     if (!chartData) {
+//         console.log("Error creating chart");
+//     }
+//     else{
+//         createChart(chartName, chartData, labels);
+//     }
+// });
 
 let myChartBox = null;
 function openLightbox(config) {

@@ -196,13 +196,14 @@ class AttendanceDB:
                 """, (target_date, start_time))
             else:
                 cursor.execute("""
-                    SELECT DISTINCT t1.employee_name, t1.employee_num, t2.department
+                    SELECT t2.employee_name, t1.employee_num, MIN(t1.timestamp), t2.department
                     FROM `raw` t1
                     INNER JOIN `list` t2 ON t1.employee_num = t2.employee_num
                     WHERE t2.department LIKE %s
                     AND DATE(t1.`timestamp`) = %s
                     AND TIME(t1.`timestamp`) <= %s
-                    ORDER BY employee_name
+                    GROUP BY t1.employee_num
+                    ORDER BY t2.employee_name
                 """, (f'%{dept}%', target_date, start_time,))
             return cursor.fetchall()
         finally:
@@ -642,11 +643,11 @@ async def handle_count_operators(arguments: dict) -> list[TextContent]:
     """Handle operator counting"""
     target_date = date.today()
     if arguments.get("date"):
-        target_date = parse_date_string(arguments["date"]) or date.today()
+        target_date = parse_date_string(arguments["date"])
     
-    start_time = time(7, 0)
+    start_time = datetime.now().time()
     if arguments.get("start_time"):
-        start_time = parse_time_string(arguments["start_time"]) or time(7, 0)
+        start_time = parse_time_string(arguments["start_time"])
     
     operators = attendance_db.get_operators_present(target_date, start_time)
     
@@ -671,9 +672,9 @@ async def handle_dept_headcount(arguments: dict) -> list[TextContent]:
     if arguments.get("date"):
         target_date = parse_date_string(arguments["date"]) or date.today()
     
-    start_time = time(7, 0)
+    start_time = datetime.now().time()
     if arguments.get("start_time"):
-        start_time = parse_time_string(arguments["start_time"]) or time(7, 0)
+        start_time = parse_time_string(arguments["start_time"])
     
     dept_input = arguments.get("department")
     
@@ -749,7 +750,7 @@ async def handle_latest_entries(arguments: dict) -> list[TextContent]:
 
     if where == 'last':
         filename = 'latest_entries_' + today + '.csv'
-        text = filename + f"# 🕐 Latest Attendance Entries as of {curr_time}"
+        text = filename + f"# 🕐 Latest Attendance Entries as of {curr_time} \n\n"
     elif where == 'first':
         filename = 'earliest_entries_' + today + '.csv'
         text = filename + f"# 🕐 Earliest Attendance Entries\n\n"

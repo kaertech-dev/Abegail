@@ -10,11 +10,19 @@
 <body>
     <!-- dump for buttons that have event listeners -->
     <div style="display: none;">
-        <select name="csv_source" id="file_dropdown" required></select>
         <button class="icon-button" id="themeToggle" title="Toggle dark mode">
             <i class="fas fa-moon"></i>
         </button>
-        <div id="moreSettings" class="more-settings"></div>
+    </div>
+
+    <div class="mini-game" id="mini-game" style="display: none;">
+        <div class="game-header" id="game-header">
+            <button id="new-game" onclick="generate()">New Game</button>
+            <div id="flag-count">Flags: 7</div>
+            <button id="flag-toggle" onclick="flagMode()">Flag</button>
+            <input type="checkbox" id="flag-state" style="display: none;"/>
+        </div>
+        <div class="main-box" id="main-box"></div>
     </div>
 
     <div class="chart-lightbox" id="chart-lightbox" style="display: none;">
@@ -67,8 +75,6 @@
                 Live Transcription
             </button>
         </div>
-
-        
     </div>
     
     <!-- Main interface -->
@@ -92,7 +98,7 @@
                 </button>
             </div>
             <div class="chat-header">
-                <h2>🤖 Abegail Chat</h2>
+                <h2 ondblclick="launchGame()">🤖 Abegail Chat</h2>
             </div>
         </div>
 

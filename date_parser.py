@@ -44,9 +44,10 @@ def keyword_check(message: str) -> List[str]:
     elif match := re.search(r'(?:last|previous) month', message, re.IGNORECASE):
         prev = today.month - 1
         _, last_day = calendar.monthrange(today.year, prev)
-        start_date = date(year=today.year, month=prev, day=1)
-        end_date = date(year=today.year, month=prev, day=last_day)
-        date_list.append(start_date, end_date)
+        start_date = date(year=today.year, month=prev, day=1).isoformat()
+        end_date = date(year=today.year, month=prev, day=last_day).isoformat()
+        date_list.append(start_date)
+        date_list.append(end_date)
 
     return date_list
 
@@ -61,7 +62,7 @@ def validate(date_list: List) -> List:
     obj_list.sort()
     return obj_list
 
-def extractDate(message: str) -> List[date]:
+def extractDate(message: str, default='today') -> List[str]:
     # check for time markers
     kw = keyword_check(message)
     if len(kw) > 0:
@@ -132,4 +133,4 @@ def extractDate(message: str) -> List[date]:
         # print(iso_list)
         return iso_list
     else:
-        return [date.today().isoformat()]
+        return [date.today().isoformat()] if default == 'today' else []

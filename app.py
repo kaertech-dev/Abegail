@@ -146,9 +146,9 @@ def chat():
             # either message + file OR message includes filename
             result = ask_with_file_parse(fileAttached, message)
         
-        # Default: General AI response
+        # Process query: Attendance, Activity, Traceability, General
         if not result:
-            result = ask_general_question("Current query: " + message, relevant_context, current_session.user_name)
+            result = ask_general_question(message, relevant_context, current_session.user_name)
         
         # Create bot message object
         csv_filename = result.get('csv_file', '')
