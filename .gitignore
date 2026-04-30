@@ -9,3 +9,10 @@ wheels/
 # Virtual environments
 .venv
 .venv.zip
+
+# Private files
+csv_files/
+webcam/
+known_faces/
+speechlogs/
+voices_trained/

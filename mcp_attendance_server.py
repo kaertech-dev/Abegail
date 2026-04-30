@@ -690,7 +690,7 @@ async def handle_dept_headcount(arguments: dict) -> list[TextContent]:
     writer = csv.DictWriter(csvfile, fieldnames=['employee_name', 'employee_num', 'department'], extrasaction='ignore')
     writer.writeheader()
     
-    text = filename + f"# {dept_input} Department - {target_date}\n\n"
+    text = filename + f"# {dept_input.title()} Department - {target_date}\n\n"
     text += f"**Total employees:** {len(all_employees)}\n"
     text += f"**Present:** {len(present_employees)}\n"
     rate = 100 * len(present_employees)/len(all_employees)

@@ -84,7 +84,10 @@ def upload_file():
 @app.route('/api/download/<path:filename>', methods=['GET'])
 def download_file(filename):
     """Endpoint for handling csv exports"""
-    return send_from_directory(CSV_BASE_PATH, filename, as_attachment=True)
+    if os.path.exists(os.path.join(CSV_BASE_PATH, filename)):
+        return send_from_directory(CSV_BASE_PATH, filename, as_attachment=True)
+    else:
+        return jsonify({'error': 'File or path does not exist'}), 404
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
@@ -233,14 +236,6 @@ def test_database():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/get_charts', methods=['GET'])
-def giveChart():
-    BASE_PATH = os.getcwd()
-    fileList = []
-    with os.scandir('./csv_files') as fileIter:
-        fileList = [file.name for file in fileIter]
-    return jsonify({'success': True, 'charts': fileList}), 200
-
 @app.route('/chart/<path:csv_source>', methods=['GET', 'POST'])
 def parseCsv(csv_source):
     """Process the given csv file to chart data"""
@@ -274,23 +269,6 @@ def parseCsv(csv_source):
         return jsonify({'success': True, 'labels': labels, 'data': data, 'name': name}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
-# @app.route('/webcam', methods=['GET', 'POST'])
-# def cam_base():
-#     screenshots = []
-#     with os.scandir('webcam') as d:
-#         for e in d:
-#             if e.name[-4:] == '.jpg':
-#                 screenshots.append(f"webcam/{e.name}")
-#     screenshots.reverse()
-    
-#     known_faces = []
-#     with os.scandir('known_faces') as f:
-#         for g in f:
-#             if g.name[-4:] == '.jpg':
-#                 known_faces.append(f"known_faces/{g.name}")
-
-#     return render_template('webcam.html', screenshots=screenshots, known_faces=known_faces)
 
 @app.route('/webcam_update', methods=['POST'])
 def update_status():
@@ -382,7 +360,7 @@ def print_startup_banner():
     local_ip = get_local_ip()
     print(f"""
 {'='*70}
-🚀 Abegail AI Assistant - Full System
+🚀 Abigail AI Assistant - Full System
 {'='*70}
 📡 Access URLs:
    🏠 Local:   http://127.0.0.1:8080

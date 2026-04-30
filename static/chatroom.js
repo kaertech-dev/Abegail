@@ -37,9 +37,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fontSizeValue').textContent = `${fontSize}px`;
 });
 
+const playArea = document.getElementById('main-box');
 function launchGame() {
     const gamebox = document.getElementById('mini-game');
-    const playArea = document.getElementById('main-box');
     if (gamebox.style.display == 'none') {
         gamebox.style.display = 'flex';
         generate();
@@ -51,8 +51,8 @@ function launchGame() {
     }
 }
 
-function assignClues(cell) {
-    const around = []
+function getAdjacent(cell) {
+    const around = [];
     if (cell % 10 == 1) {
         // left edge
         around.push(...[cell-10, cell-10+1, cell+1, cell+10, cell+10+1]);
@@ -64,13 +64,19 @@ function assignClues(cell) {
     else {
         around.push(...[cell-10-1, cell-10, cell-10+1, cell-1, cell+1, cell+10-1, cell+10, cell+10+1]);
     }
-    // const around = [cell-10-1, cell-10, cell-10+1, cell-1, cell+1, cell+10-1, cell+10, cell+10+1];
+    const final = around.filter(num => num > 0 && num < 101);
+    return final;
+}
+
+function assignClues(cell) {
+    const around = getAdjacent(cell);
     for (let curr_cell of around) {
         if (curr_cell > 0 && curr_cell < 101) {
             const child = document.querySelector(`#main-box :nth-child(${curr_cell})`);
             if (child.dataset.txt == '') {
                 child.dataset.txt = '1';
-            } else {
+            } 
+            else if (child.dataset.txt != 'X'){
                 const ctr = parseInt(child.dataset.txt);
                 child.dataset.txt = ctr + 1;
             }
@@ -78,11 +84,11 @@ function assignClues(cell) {
     }
 }
 
-let win_condition = 100;
+const visited = [];
 function generate() {
-    const playArea = document.getElementById('main-box');
     playArea.innerHTML = '';
     win_condition = 100;
+    visited.length = 0;
     for (let i=0; i<100; i++) {
         const cell = document.createElement('p');
         cell.dataset.txt = '';
@@ -90,14 +96,16 @@ function generate() {
         playArea.appendChild(cell);
     }
 
-    let mine_ctr = 10;
+    // let mine_ctr = 10;
+    const diffSelect = document.getElementById('difficulty');
+    let mine_ctr = diffSelect.value;
     const flagCount = document.getElementById('flag-count');
     flagCount.innerText = 'Flags: ' + mine_ctr;
     
     while (mine_ctr > 0) {
         const num = Math.floor(Math.random()*100) + 1;
         const curr_child = document.querySelector(`#main-box :nth-child(${num})`);
-        if (curr_child.dataset.txt == '') {
+        if (curr_child.dataset.txt != 'X') {
             curr_child.dataset.txt = 'X';
             assignClues(num);
             mine_ctr -= 1;
@@ -105,6 +113,7 @@ function generate() {
     }
 
     playArea.onclick = (event) => uncover(event);
+    playArea.oncontextmenu = (event) => setFlag(event);
 }
 
 function flagMode() {
@@ -120,7 +129,6 @@ function flagMode() {
 }
 
 function endGame(color) {
-    const playArea = document.getElementById('main-box');
     const all_child = playArea.querySelectorAll('p');
     const flagCount = document.getElementById('flag-count');
 
@@ -128,7 +136,11 @@ function endGame(color) {
 
     for (let cell of all_child) {
         if (cell.dataset.txt == 'X') {
-            cell.classList.add(color);
+            if (cell.classList.contains('flagged')) {
+                cell.classList.add('victory');
+            } else {
+                cell.classList.add(color);
+            }
         }
         else {
             cell.classList.add('opened');
@@ -144,55 +156,44 @@ function endGame(color) {
     }
 }
 
-function spread(cell) {
-    const playArea = document.getElementById('main-box');
-
-    let num = cell-10;
-    while (num > 0 && num < 101) {
-        const curr_cell = playArea.querySelector(`#main-box :nth-child(${num})`);
-        if (curr_cell.dataset.txt != '') {
-            stopFlag = true;
-            break;
+function openAdjacent(cell_num) {
+    const adjacentList = getAdjacent(cell_num);
+    for (let num of adjacentList) {
+        if (!visited.includes(num)) {
+            visited.push(num);
+            const curr_cell = playArea.querySelector(`#main-box :nth-child(${num})`);
+            if (curr_cell.dataset.txt == '' && curr_cell.classList.length == 0) {
+                curr_cell.classList.add('opened');
+                curr_cell.innerText = curr_cell.dataset.txt;
+                let new_adj = getAdjacent(num).filter(numb => !visited.includes(numb));
+                adjacentList.push(...new_adj);
+            }
+            else if (curr_cell.dataset.txt != 'X') {
+                curr_cell.classList.add('opened');
+                curr_cell.innerText = curr_cell.dataset.txt;
+            }
         }
-        curr_cell.classList.add('opened');
-        curr_cell.innerText = curr_cell.dataset.txt;
-        num -= 10;
     }
+}
 
-    num = cell+10;
-    while (num > 0 && num < 101) {
-        const curr_cell = playArea.querySelector(`#main-box :nth-child(${num})`);
-        if (curr_cell.dataset.txt != '') {
-            stopFlag = true;
-            break;
-        }
-        curr_cell.classList.add('opened');
-        curr_cell.innerText = curr_cell.dataset.txt;
-        num += 10;
+function setFlag(e) {
+    const target = e.target.closest('p');
+    if (target == null) return;
+    e.preventDefault();
+
+    const flagCtr = document.getElementById('flag-count');
+    const num = flagCtr.innerText.match(/\d+/);
+    let flag_count = parseInt(num[0]);
+    
+    if ((target.classList.length == 0) && flag_count > 0) {
+        target.classList.add('flagged');
+        flag_count -= 1;
+        flagCtr.innerText = 'Flags: ' + flag_count;
     }
-
-    num = cell-1;
-    while (num%10 > 0) {
-        const curr_cell = playArea.querySelector(`#main-box :nth-child(${num})`);
-        if (curr_cell.dataset.txt != '') {
-            stopFlag = true;
-            break;
-        }
-        curr_cell.classList.add('opened');
-        curr_cell.innerText = curr_cell.dataset.txt;
-        num -=1;
-    }
-
-    num = cell;
-    while (Math.trunc(num/10) == Math.trunc(cell/10)) {
-        num += 1;
-        const curr_cell = playArea.querySelector(`#main-box :nth-child(${num})`);
-        if (curr_cell.dataset.txt != '') {
-            stopFlag = true;
-            break;
-        }
-        curr_cell.classList.add('opened');
-        curr_cell.innerText = curr_cell.dataset.txt;
+    else if (target.classList.contains('flagged')) {
+        target.classList.remove('flagged');
+        flag_count += 1;
+        flagCtr.innerText = 'Flags: ' + flag_count;
     }
 }
 
@@ -200,46 +201,21 @@ function uncover(e) {
     const target = e.target.closest('p');
     if (target == null) return;
 
-    const flagCtr = document.getElementById('flag-count');
-    const num = flagCtr.innerText.match(/\d+/);
-    let flag_count = parseInt(num[0]);
-    const useFlag = document.getElementById('flag-state');
-
-    if (useFlag.checked) {
-        if ((target.classList.length == 0) && flag_count > 0) {
-            // target.style.color = 'yellow';
-            // target.style.background = 'yellow';
-            target.classList.add('flagged');
-            win_condition -= 1;
-            flag_count -= 1;
-            flagCtr.innerText = 'Flags: ' + flag_count;
-        }
-        else if (target.classList.contains('flagged')) {
-            // target.style.color = 'white';
-            // target.style.background = 'white';
-            target.classList.remove('flagged');
-            win_condition += 1;
-            flag_count += 1;
-            flagCtr.innerText = 'Flags: ' + flag_count;
-        }
-    }
-    else if (target.classList.length == 0) {
-        // target.style.color = 'black';
-        // target.style.background = 'gray';
+    if (target.classList.length == 0) {
         target.classList.add('opened');
         target.innerText = target.dataset.txt;
-        win_condition -= 1;
         if (target.dataset.txt == 'X') {
             endGame('defeat');
         }
         else if (target.dataset.txt == '') {
-            spread(parseInt(target.dataset.id));
+            openAdjacent(parseInt(target.dataset.id));
         }
     }
 
-    // win_condition -= 1;
-    // console.log(win_condition);
-    if (win_condition == 0) {
+    const opened = playArea.querySelectorAll('p.opened').length;
+    const flagged = playArea.querySelectorAll('p.flagged').length;
+    // console.log(opened, flagged);
+    if (opened + flagged == 100) {
         endGame('victory');
     }
 }
@@ -572,7 +548,7 @@ function saveTranscript() {
 function clearTranscript() {
     const full_text = document.getElementById("meeting-transcript");
     full_text.style.animation = 'slideOutLeft 1s ease-in';
-    full_text.innerText = 'Meeting transcript appears here. Try saying "Hey Abegail".';
+    full_text.innerText = 'Meeting transcript appears here. Try saying "Hey Abigail".';
     showNotification("Cleared transcript");
     setTimeout(function () {
         full_text.style.animation = null;
@@ -801,34 +777,30 @@ function cancelFile() {
 }
 
 async function downloadCSV(filename) {
-    // find all .csv in the filename
-    const file_array = filename.split(" ");
-    // console.log(file_array);
-    for (let entry of file_array){
-        try{
-            window.location.href = "api/download/" + entry;
-            showNotification("Downloading csv...");
-            playSound('success');
-        } catch (error) {
-            console.error('Export error:', error);
-            showNotification('Failed to download csv', 'error');
-        }
+    try {
+        // window.location.href = "api/download/" + filename;
+        window.open("api/download/" + filename, "_blank");
+        showNotification("Downloading csv...");
+        playSound('success');
+    } catch (error) {
+        // console.error('Export error:', error);
+        showNotification('Failed to download csv', 'error');
     }
-    // try{
-    //     window.location.href = "api/download/" + filename;
-    //     showNotification("Downloading csv...");
-    //     playSound('success');
-    // } catch (error) {
-    //     console.error('Export error:', error);
-    //     showNotification('Failed to download csv', 'error');
-    // }
     
     hideContextMenu();
 }
 
 async function viewChart(csv_source) {
     try {
-        window.open("chart/" + csv_source, "_blank");
+        // window.open("chart/" + csv_source, "_blank");
+        let chartValues = await parseCsv(csv_source);
+        if (!chartValues.data) {
+            console.log("Error creating chart");
+        }
+        else {
+            const config = chartConfig(chartValues.name, chartValues.data, chartValues.labels);
+            openLightbox(config);
+        }
         playSound('success');
         
     } catch (error) {
@@ -947,7 +919,6 @@ function recogContinuous(event) {
 
     let position = transcript.search(/hey abigail/i);
     if (position != -1) {
-        transcript = transcript.replace(/abigail/g, "Abegail");
         document.getElementById("chatInput").focus();
         playSound('click');
         recognition.addEventListener('result', recogOneShot);
@@ -1123,17 +1094,10 @@ function addMessage(message, isUser = false, metadata = {}) {
     messageDiv.className = `message-bubble ${isUser ? 'user' : 'bot'}`;
     messageDiv.dataset.messageId = metadata.id || `msg_${Date.now()}_${Math.random()}`;
     
-    const avatarContent = isUser ? '' : '<img src="/static/images/abegail-removebg-preview.png" alt="Abegail" class="avatar-image">';
+    const avatarContent = isUser ? '' : '<img src="/static/images/abigail-removebg-preview.png" alt="Abigail" class="avatar-image">';
     const avatarClass = isUser ? 'user-avatar' : 'bot-avatar';
     
     let badges = '';
-    // if (metadata.edited) {
-    //     badges += '<span class="badge edited">Edited</span>';
-    // }
-    // if (metadata.regenerated) {
-    //     badges += '<span class="badge regenerated">Regenerated</span>';
-    // }
-
     if (metadata.response_type === 'activity') {
         badges = '<span class="badge activity">Activity</span>';
     }else if (metadata.response_type === 'attendance') {
@@ -1145,14 +1109,8 @@ function addMessage(message, isUser = false, metadata = {}) {
     }else if (metadata.response_type) {
         badges = `<span class="badge others">${metadata.response_type}</span>`;
     }
-    
-    const editButton = isUser ? `
-        <div class="edit-actions">
-            <button class="edit-btn" onclick="startEdit('${messageDiv.dataset.messageId}')" title="Edit message">✏️</button>
-        </div>
-    ` : '';
 
-    const bubbleClass = metadata.edited ? 'bubble edited' : metadata.regenerated ? 'bubble regenerated' : 'bubble';
+    const bubbleClass = 'bubble';
     
     // Render markdown if available
     let messageContent = escapeHtml(message);
@@ -1187,7 +1145,7 @@ function addMessage(message, isUser = false, metadata = {}) {
     const fileArray = [];
     if (metadata.csv){
         fileArray.push(...metadata.csv.split(" "));
-        console.log(fileArray);
+        // console.log(fileArray);
     }
     
     if (metadata.csv && fileArray.length == 1 && isUser == false) {
@@ -1199,16 +1157,19 @@ function addMessage(message, isUser = false, metadata = {}) {
             </div>
         `;
     }
-
-    // build messagecontent + button pairing
     else if (metadata.csv && fileArray.length > 1 && isUser == false) {
         for (let entry of fileArray) {
             // console.log(entry);
-            let new_button = `
-            <div class="csv-action">
-                <button type="button" class="download-csv" onclick="downloadCSV('${entry}')" title="download csv">Download csv file</button>
-            </div>`;
-            messageContent = messageContent.replace("<p> placeholder </p>", new_button);
+            if (entry != '') {
+                let new_button = `
+                <div class="csv-action">
+                    <button type="button" class="download-csv" onclick="downloadCSV('${entry}')" title="download csv">Download csv file</button>
+                </div>`;
+                messageContent = messageContent.replace("<p> placeholder </p>", new_button);
+            }
+            else {
+                messageContent = messageContent.replace("<p> placeholder </p>", '');
+            }
         }
     }
     
@@ -1237,118 +1198,6 @@ function addMessage(message, isUser = false, metadata = {}) {
     playSound('click');
 }
 
-function startEdit(messageId) {
-    if (editingMessageId) return;
-    
-    editingMessageId = messageId;
-    const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
-    const bubble = messageDiv.querySelector('.bubble');
-    const originalText = bubble.dataset.original;
-    
-    bubble.innerHTML = `
-        <input type="text" class="edit-input" value="${originalText}" id="editInput" />
-        <div class="edit-buttons">
-            <button class="save-edit" onclick="saveEdit('${messageId}')">✓ Save</button>
-            <button class="cancel-edit" onclick="cancelEdit('${messageId}')">✗ Cancel</button>
-        </div>
-    `;
-    
-    document.getElementById('editInput').focus();
-}
-
-async function saveEdit(messageId) {
-    const newMessage = document.getElementById('editInput').value.trim();
-    
-    if (!newMessage) {
-        alert('Message cannot be empty');
-        return;
-    }
-    
-    updateStatus('Regenerating response...', 'processing');
-    showTypingIndicator();
-    
-    try {
-        const response = await fetch('/api/edit', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                session_id: sessionId,
-                message_id: messageId,
-                new_message: newMessage
-            })
-        });
-        
-        const data = await response.json();
-        hideTypingIndicator();
-        
-        if (data.success) {
-            const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
-            const bubble = messageDiv.querySelector('.bubble');
-            bubble.className = 'bubble edited';
-            bubble.dataset.original = newMessage;
-            
-            let messageContent = escapeHtml(newMessage);
-            if (typeof marked !== 'undefined') {
-                try {
-                    messageContent = marked.parse(newMessage);
-                } catch (e) {}
-            }
-            
-            bubble.innerHTML = `
-                ${messageContent}
-                <div class="edit-actions">
-                    <button class="edit-btn" onclick="startEdit('${messageId}')" title="Edit message">✏️</button>
-                </div>
-            `;
-            
-            const timestamp = messageDiv.querySelector('.timestamp');
-            timestamp.innerHTML = `${data.user_message.timestamp} <span class="badge edited">Edited</span>`;
-            
-            const nextBubble = messageDiv.nextElementSibling;
-            if (nextBubble && nextBubble.classList.contains('bot')) {
-                nextBubble.remove();
-            }
-            
-            addMessage(data.bot_response.message, false, data.bot_response);
-            updateStatus('Ready', 'ready');
-            playSound('success');
-        } else {
-            alert('Failed to regenerate response');
-            cancelEdit(messageId);
-        }
-    } catch (error) {
-        hideTypingIndicator();
-        alert('Error editing message: ' + error.message);
-        cancelEdit(messageId);
-    }
-    
-    editingMessageId = null;
-}
-
-function cancelEdit(messageId) {
-    const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
-    const bubble = messageDiv.querySelector('.bubble');
-    const originalText = bubble.dataset.original;
-    
-    let messageContent = escapeHtml(originalText);
-    if (typeof marked !== 'undefined') {
-        try {
-            messageContent = marked.parse(originalText);
-        } catch (e) {}
-    }
-    
-    bubble.innerHTML = `
-        ${messageContent}
-        <div class="edit-actions">
-            <button class="edit-btn" onclick="startEdit('${messageId}')" title="Edit message">✏️</button>
-        </div>
-    `;
-    
-    editingMessageId = null;
-}
-
 function showTypingIndicator() {
     const messagesContainer = document.getElementById('chat-messages');
     const typingDiv = document.createElement('div');
@@ -1356,7 +1205,7 @@ function showTypingIndicator() {
     typingDiv.id = 'typingIndicator';
     typingDiv.innerHTML = `
         <div class="message-content">
-            <div class="avatar bot-avatar"><img src="/static/images/abegail-removebg-preview.png" alt="Abegail" class="avatar-image"></div>
+            <div class="avatar bot-avatar"><img src="/static/images/abigail-removebg-preview.png" alt="Abigail" class="avatar-image"></div>
             <div class="typing-indicator">
                 <span></span>
                 <span></span>
@@ -1402,11 +1251,6 @@ async function sendMessage(withTranscript = false) {
     if (fileInput.value != '') {
         submitFile();
         filename = fileInput.files[0].name;
-        // const msgId = `msg_${Date.now()}_${Math.random()}`;
-        // addMessage(`Uploaded file: ${filename}`, true, { id: msgId, timestamp: getCurrentTime() });
-        // showNotification('File uploaded successfully.');
-        // uploaded = document.createElement('em');
-        // uploaded.innerText = `Uploaded file: ${filename}`;
         message = `**Uploaded file: ${filename}**\n\n\n` + message;
     }
     
@@ -1458,17 +1302,12 @@ async function sendMessage(withTranscript = false) {
             }
 
             if (data.response_type === 'chart') {
-                let valuesArray = await parseCsv(message);
-                // console.log(valuesArray);
-                
-                const chartName = valuesArray[0];
-                const chartData = valuesArray[1];
-                const labels = valuesArray[2];
-                if (!chartData) {
+                let chartValues = await parseCsv(message);
+                if (!chartValues.data) {
                     console.log("Error creating chart");
                 }
                 else{
-                    createChart(chartName, chartData, labels);
+                    createChart(chartValues.name, chartValues.data, chartValues.labels);
                 }
             }
         }
@@ -1505,7 +1344,7 @@ async function clearChat() {
         messagesContainer.innerHTML = `
             <div class="message-bubble bot">
                 <div class="message-content">
-                    <div class="avatar bot-avatar"><img src="/static/images/abegail-removebg-preview.png" alt="Abegail" class="avatar-image"></div>
+                    <div class="avatar bot-avatar"><img src="/static/images/abigail-removebg-preview.png" alt="Abigail" class="avatar-image"></div>
                     <div>
                         <div class="bubble">Chat cleared! How can I help you?</div>
                         <div class="timestamp">${getCurrentTime()}</div>
@@ -1546,7 +1385,7 @@ async function exportChat() {
             
             if (bubble) {
                 exportText += `[${timestamp?.textContent || 'Unknown'}] `;
-                exportText += `${isUser ? 'You' : 'Abegail'}: `;
+                exportText += `${isUser ? 'You' : 'Abigail'}: `;
                 exportText += bubble.textContent.trim() + '\n\n';
             }
         });
@@ -1895,50 +1734,18 @@ function toggleRecog() {
     }
 };
 
-// const fileDrop = document.getElementById("file_dropdown");
-// let myChart = new Array();
-// function populateDropdown() {
-//     fetch('/get_charts')
-//     .then(response => response.json())
-//     .then(data => {
-//         const list = data.charts;
-//         list.forEach(element => {
-//             const option = document.createElement("option");
-//             option.textContent = `${element}`;
-//             option.value = element;
-//             fileDrop.appendChild(option);
-//         });
-//     })
-//     .catch(error => console.error('Error:', error));
-// }
-
-// populateDropdown();
-
 function parseCsv(filename) {
     return fetch(`/chart/${filename}`, {})
     .then(response => response.json())
     .then(data => {
-        let labels = data.labels;
-        let chartData = data.data;
-        let chartName = data.name;
-        return new Array(chartName, chartData, labels);
+        const chartObject = {};
+        chartObject.labels = data.labels;
+        chartObject.data = data.data;
+        chartObject.name = data.name;
+        return chartObject;
     })
     .catch(error => console.error('Error:', error));
 }
-
-// fileDrop.addEventListener('change', async () => {
-//     const filename = fileDrop.value;
-//     let valuesArray = await parseCsv(filename);
-//     const chartName = valuesArray[0];
-//     const chartData = valuesArray[1];
-//     const labels = valuesArray[2];
-//     if (!chartData) {
-//         console.log("Error creating chart");
-//     }
-//     else{
-//         createChart(chartName, chartData, labels);
-//     }
-// });
 
 let myChartBox = null;
 function openLightbox(config) {
@@ -1971,8 +1778,7 @@ function exitLightbox() {
     lightbox.style.display = 'none';
 }
 
-function createChart(chartName, chartData, labels) {
-    // console.log("Creating chart...");
+function chartConfig(chartName, chartData, labels) {
     const data = {
         labels: labels,
         datasets: [{
@@ -2032,19 +1838,13 @@ function createChart(chartName, chartData, labels) {
         }
     };
 
-    // const chartNodes = document.querySelectorAll('canvas');
-    // console.log(chartNodes);
-    // let chart_space = null;
-    // if (chartNodes.length > 1) {
-    //     const lastIndex = chartNodes.length - 1;
-    //     chart_space = chartNodes[lastIndex];
-    // }
-    // else {
-    //     const lastIndex = 0;
-    //     chart_space = chartNodes[lastIndex];
-    // }
+    return config;
+}
+
+function createChart(chartName, chartData, labels) {
+    // console.log("Creating chart...");
+    const config = chartConfig(chartName, chartData, labels);
     let chart_space = document.querySelector(`#myChart_${curr_chart_id}`);
-    // chart_id += 1;
 
     myChart.push(new Chart(
         chart_space,

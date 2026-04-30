@@ -114,6 +114,7 @@ body {
     background: lightgray;
     display: flex;
     flex-direction: column;
+    z-index: 100;
 }
 
 .game-header {
@@ -137,6 +138,8 @@ body {
     color: rgb(136, 136, 136);
     height: 30px;
     width: 30px;
+    text-align: center;
+    padding: 5px;
 }
 
 .main-box > p:hover {
@@ -155,12 +158,12 @@ body {
 }
 
 .main-box > p.defeat {
-    background: red;
+    background: #ff7676;
     color: black;
 }
 
 .main-box > p.victory {
-    background: green;
+    background: rgb(120, 233, 120);
     color: black;
 }
 
@@ -338,14 +341,6 @@ body {
     transition: transform 0.3s;
 }
 
-/* .cam-buttons {
-    grid-area: cam-buttons;
-    display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 10px;
-} */
-
 .main-video-ui {
     grid-area: webcam;
     display: flex;
@@ -426,9 +421,13 @@ body {
     flex: 1;
     overflow-y: auto;
     padding: 10px;
-    /* background: var(--bg-secondary); */
     scroll-behavior: smooth;
     transition: grid-template-areas 0.5s ease-out, grid-template-columns 0.5s ease-out, grid-template-rows 0.5s ease-out;
+}
+
+.csv-action {
+    text-align: center;
+    margin: 10px 0;
 }
 
 .csv-action button.download-csv {

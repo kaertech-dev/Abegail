@@ -18,38 +18,36 @@ DB_CONFIG = {
 CSV_PATH = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/csv_files/"
 
 class ProductionArguments:
-    # get wip = schema, model, po
-    # station details = schema, model, station
-    # process flow = schema, model
-    # list all PO, last running PO = schema, model
-    # serial query = serial
-    # active projects, running models = none
-
     def __init__(self):
         self.command = ''
         self.schema = ''
         self.model = ''
-        self.station = ''
+        # self.station = ''
         self.stationList = []
         self.po_num = ''
         self.serial = ''
         self.date_time = []
     
     def __repr__(self):
-        self.cont = [self.command, self.schema, self.model, self.station, self.po_num, self.serial]
+        self.cont = [self.command, self.schema, self.model]
+        self.cont.extend(self.stationList)
+        self.cont.extend([self.po_num, self.serial])
         self.cont.extend(self.date_time)
         return self.cont
     
     def __str__(self):
-        self.cont = [self.command, self.schema, self.model, self.station, self.po_num, self.serial]
-        self.cont.extend(self.date_time)
-        return str(self.cont)
+        to_str = f"Command: {self.command} -- Schema: {self.schema} -- Model: {self.model} \n"
+        to_str += f"PO Number: {self.po_num} -- Stations: {self.stationList} \n"
+        to_str += f"Serial Number: {self.serial} \n"
+        to_str += f"Date: {self.date_time}"
+        return to_str
     
     def check(self):
-        if (self.command == 'get wip') and self.schema and self.model and self.po_num:
-            return True
-        elif (self.command == 'station details' or self.command == 'raw data') and self.schema and self.model and (self.station or self.stationList):
-            return True
+        if (self.command == 'get wip' or self.command == 'rejects' or self.command == 'station details' or self.command == 'raw data'):
+            if self.schema and self.model and self.po_num and len(self.stationList) > 0:
+                return True
+        # elif (self.command == 'station details' or self.command == 'raw data') and self.schema and self.model and (self.station or self.stationList):
+        #     return True
         elif (self.command == 'process flow') or (self.command == 'list all PO') or (self.command == 'last running PO'):
             if self.schema and self.model:
                 return True
@@ -64,7 +62,7 @@ class ProductionArguments:
         self.command = ''
         self.schema = ''
         self.model = ''
-        self.station = ''
+        # self.station = ''
         self.stationList = []
         self.po_num = ''
         self.serial = ''
@@ -82,23 +80,28 @@ class ProductionDB:
     
     def __init__(self):
         self.config = DB_CONFIG
-        self.projectList = self._get_all_projects()
         self.models = {}
 
         conn = self.connect('INFORMATION_SCHEMA')
         cursor = conn.cursor(dictionary=True)
-        for proj_name in self.projectList:
-            query = """ SELECT DISTINCT `TABLE_NAME` FROM `COLUMNS` 
-            WHERE `TABLE_SCHEMA` = %s
-            AND `TABLE_NAME` LIKE '%_main' """
-            cursor.execute(query, (proj_name,))
-            modelList = [row['TABLE_NAME'].split('_')[0] for row in cursor.fetchall()]
-            self.models[proj_name] = modelList
+        # is depanel better? although if may depanel but no main, walang process flow
+        query = """ SELECT DISTINCT `TABLE_SCHEMA`, `TABLE_NAME` FROM `COLUMNS` 
+        WHERE `TABLE_NAME` LIKE '%\\_main' """
+        cursor.execute(query)
+        records = cursor.fetchall()
+        for row in records:
+            schema = row['TABLE_SCHEMA']
+            model = row['TABLE_NAME'].split('_')[0]
+            if schema not in self.models:
+                self.models[schema] = [model]
+            else:
+                self.models[schema].append(model)
+        cursor.close()
+        conn.close()
         # print(self.models)
     
     def detectAlias(self, user_query: str):
-        word_bank = {'functional test': 'ft', 'final test' : 'ft', 'visual inspection': 'vi', 'final visual inspection': 'fvi',
-                     'programming': 'progtest'}
+        word_bank = {'functional test': 'ft', 'visual inspection': 'vi', 'final visual inspection': 'fvi'}
         for word, meaning in word_bank.items():
             if word in user_query:
                 user_query = user_query.replace(word, meaning)
@@ -106,21 +109,24 @@ class ProductionDB:
     
     def execute(self, command: str, args: ProductionArguments):
         if 'get wip' in command:
-            result = self.getWIP(args.schema, args.model, args.po_num, args.date_time)
+            result = self.getWIP(args.schema, args.model, args.po_num, args.stationList, args.date_time)
+        
+        elif 'rejects' in command:
+            result = self.getRejects(args.schema, args.model, args.po_num, args.stationList)
 
         elif 'station details' in command or 'raw data' in command:
             if len(args.stationList) > 1:
                 final_text = ''
                 final_csv = []
                 for station in args.stationList:
-                    out = self.getStationDetails(args.schema, args.model, station, args.date_time)
+                    out = self.getStationDetails(args.schema, args.model, args.po_num, station, args.date_time)
                     if out is not None:
                         final_text += out['answer'] + '\n\n placeholder \n\n'
                         final_csv.append(out.get('csv_file', ''))
                 
                 result = {'answer': final_text, 'csv_file': ' '.join(final_csv), 'response_type': 'KTS'}
             else:
-                result = self.getStationDetails(args.schema, args.model, args.station, args.date_time)
+                result = self.getStationDetails(args.schema, args.model, args.po_num, args.stationList[0], args.date_time)
         
         elif 'list all PO' in command:
             result = self.listPO(args.schema, args.model)
@@ -143,6 +149,10 @@ class ProductionDB:
         else:
             result = {}
 
+        if type(result) == str:
+            # Final check for outputs of type string
+            result = {'answer': result, 'response_type': 'KTS'}
+        
         getProdArgs().clear()
         return result
     
@@ -237,13 +247,21 @@ class ProductionDB:
     # ======= Public Functions ======= #
     def getProcessFlow(self, schema: str, model: str):
         columns = self._get_columns(schema, model)
-        result = str_formatter({'schema': schema, 'model': model, 'stations': columns}, 'Process Flow')
-        return {'answer': result, 'response_type': 'KTS'}
+
+        output = "## Process Flow \n\n"
+        output += f"**Schema:** {schema.title()} \n\n"
+        output += f"**Model:** {model.title()} \n\n"
+        for i, text in enumerate(columns, 1):
+            output += f" {i}. {text} \n\n"
+        return {'answer': output, 'response_type': 'KTS'}
     
     def getActiveProjects(self):
-        output = self._get_all_projects()
-        result =  str_formatter(output, 'List of Active Projects')
-        return {'answer': result, 'response_type': 'KTS'}
+        projList = self._get_all_projects()
+
+        output = "## List of Active Projects \n\n"
+        for i, text in enumerate(projList, 1):
+            output += f" {i}. {text} \n\n"
+        return {'answer': output, 'response_type': 'KTS'}
     
     def serialQuery(self, serial_num: str):
         # Brute-force search all active projects
@@ -254,7 +272,8 @@ class ProductionDB:
                 break
 
         if found is None:
-            return f'Unit with serial {serial_num} is either invalid or not part of any active projects'
+            output = f'Unit with serial {serial_num} is either invalid or not part of an active project'
+            return {'answer': output, 'response_type': 'KTS'}
 
         schema = found['schema']
         model = found['model']
@@ -263,14 +282,22 @@ class ProductionDB:
         conn = self.connect(schema)
         try:
             cursor = conn.cursor(dictionary=True)
-            unit_history = {'schema': schema, 'model': model}
+            unit_history = {}
 
-            # retrieve details per station
+            # Add depanel info
+            query = """ SELECT serial_num, date_time, operator_en FROM """ + f'{model}_depanel' + """ 
+            WHERE `serial_num` LIKE %s """
+            cursor.execute(query, (serial_num,))
+            row = cursor.fetchall()
+            if row:
+                unit_history[station] = row[0]
+                unit_history[station].update({'status': '1'})
+
+            # Retrieve details per station
             for station in columns:
                 table_name = f'{model}_{station}'
                 query = """ SELECT serial_num, status, date_time, operator_en FROM """ + table_name + """ 
-                WHERE `serial_num` LIKE %s
-                """
+                WHERE `serial_num` LIKE %s """
                 cursor.execute(query, (serial_num,))
                 row = cursor.fetchall()
                 if row:
@@ -278,17 +305,21 @@ class ProductionDB:
                 # else:
                 #     break
             
-            result = str_formatter(unit_history, f'Serial Query: {serial_num}')
-            return {'answer': result, 'response_type': 'KTS'}
+            output = f"## Serial Query: {serial_num} \n\n"
+            output += f"**Schema:** {schema} \n\n"
+            output += f"**Model:** {model} \n\n"
+            table_headers = ['process', 'status', 'date_time', 'operator_en']
+            output += makeTable(table_headers, unit_history)
+            return {'answer': output, 'response_type': 'KTS'}
         
-        except Exception:
-            return ''
+        except Exception as e:
+            return {'answer': e, 'response_type': 'Error'}
         
         finally:
             cursor.close()
             conn.close()
 
-    def getWIP(self, schema: str, model: str, PO_num: str, date_input: List[str], shift='A'):
+    def getWIP(self, schema: str, model: str, PO_num: str, station_list: list, date_input: List[str], shift='A'):
         if len(date_input) == 0:
             date_query = ''
             date_input = [date.today().isoformat()]
@@ -302,52 +333,59 @@ class ProductionDB:
         try:
             cursor = conn.cursor(dictionary=True)
             columns = self._get_columns(schema, model)
+            # columns.append('depanel')
             batch_summary = {'schema': schema, 'model': model, 'po_num': PO_num}
+            po_input = f"%{PO_num}%"
 
-            # depanel
             query = """ SELECT * FROM """ + f'{model}_depanel' + """ 
             WHERE `po_num` LIKE %s
             """ + date_query
-            cursor.execute(query, (PO_num,))
+            cursor.execute(query, (po_input,))
             out_entries = cursor.fetchall()
-            batch_summary['depanel'] = {'in': len(out_entries),
-                                        'wip': 0,
-                                        'fail': 0,
-                                        'out': len(out_entries)}
+            if 'depanel' in station_list:
+                batch_summary['depanel'] = {'in': len(out_entries),
+                                            'wip': 0,
+                                            'fail': 0,
+                                            'out': len(out_entries)}
             prev_out = len(out_entries)
+            prev_col = 'depanel'
 
-            # rest of the process flow
             for col in columns:
                 table_name = f'{model}_{col}'
                 # retrieve units that passed
                 query = """ SELECT serial_num, po_num, operator_en, shift, date_time, status FROM """ + table_name + """ 
-                WHERE `po_num` = %s
+                WHERE `po_num` LIKE %s
                 AND `serial_num` NOT LIKE '%\\_%'
                 AND `status` = 1
                 """ + date_query
-                cursor.execute(query, (PO_num,))
+                cursor.execute(query, (po_input,))
                 out_entries = cursor.fetchall()
-                batch_summary[col] = {'out': len(out_entries), 'in': prev_out}
+                if col in station_list:
+                    batch_summary[col] = {'out': len(out_entries), 'in': prev_out}
 
                 # retrieve units that failed
                 query = """ SELECT serial_num, po_num, operator_en, shift, date_time, status FROM """ + table_name + """ 
-                WHERE `po_num` = %s
+                WHERE `po_num` LIKE %s
                 AND `serial_num` NOT LIKE '%\\_%'
                 AND `status` = 0
                 """ + date_query
-                cursor.execute(query, (PO_num,))
+                cursor.execute(query, (po_input,))
                 fail_entries = cursor.fetchall()
-                batch_summary[col].update({'fail': len(fail_entries)})
-
-                wip = prev_out - (len(out_entries) + len(fail_entries))
-                batch_summary[col].update({'wip': wip})
-                # curr_query = cumulative_query + f" AND {col} = 0"
-                # cursor.execute(curr_query, (PO_num,))
-                # wip_entries = cursor.fetchall()
-                # batch_summary[col].update({'wip': len(wip_entries)})
+                if col in station_list:
+                    batch_summary[col].update({'fail': len(fail_entries)})
+                
+                query = " SELECT * FROM " + table_name + " t2 RIGHT JOIN " + f'{model}_{prev_col}' + " t1 ON t1.`serial_num`=t2.`serial_num` "
+                if prev_col == 'depanel':
+                    query += " WHERE t1.`po_num` LIKE %s AND t2.`serial_num` IS NULL"
+                else:
+                    query += " WHERE t1.`po_num` LIKE %s AND t1.`status` = 1 AND t2.`serial_num` IS NULL"
+                cursor.execute(query, (PO_num,))
+                wip_entries = cursor.fetchall()
+                if col in station_list:
+                    batch_summary[col].update({'wip': len(wip_entries)})
 
                 prev_out = len(out_entries)
-                # cumulative_query += f" AND {col} = 1"
+                prev_col = col
 
             csv_data = []
             for col, values in batch_summary.items():
@@ -366,7 +404,7 @@ class ProductionDB:
             cursor.close()
             conn.close()
     
-    def getStationDetails(self, schema: str, model: str, station: str, date_input: List[str]):
+    def getStationDetails(self, schema: str, model: str, po_num: str, station: str, date_input: List[str]):
         if len(date_input) == 0:
             filename = f'{model}_{station}_{date.today()}.csv'
             date_arg = ''
@@ -383,14 +421,13 @@ class ProductionDB:
                           'A': {'passed': 0, 'failed': 0},
                           'B': {'passed': 0, 'failed': 0}}
         
-        po_num = self._show_all_PO(schema, model)[0]['po_num']
         record_summary['po_num'] = po_num
 
         conn = self.connect(schema)
         try:
             cursor = conn.cursor(dictionary=True)
             query = """ SELECT * FROM """ + f" {model}_{station} " + """ 
-            WHERE `po_num` = %s AND `shift` = 'A' """ + date_arg + " ORDER BY `date_time` DESC "
+            WHERE `po_num` LIKE %s AND `shift` = 'A' """ + date_arg + " ORDER BY `date_time` DESC "
             cursor.execute(query, (po_num,))
             A_records = cursor.fetchall()
             A_passed = 0
@@ -402,7 +439,7 @@ class ProductionDB:
             record_summary['A'] = {'passed': A_passed, 'failed': (len(A_records) - dupes) - A_passed}
 
             query = """ SELECT * FROM """ + f" {model}_{station} " + """ 
-            WHERE `po_num` = %s AND `shift` = 'B' """ + date_arg + """ ORDER BY `date_time` DESC """
+            WHERE `po_num` LIKE %s AND `shift` = 'B' """ + date_arg + """ ORDER BY `date_time` DESC """
             cursor.execute(query, (po_num,))
             B_records = cursor.fetchall()
             B_passed = 0
@@ -414,7 +451,7 @@ class ProductionDB:
             record_summary['B'] = {'passed': B_passed, 'failed': (len(B_records) - dupes) - B_passed}
 
             if len(A_records) + len(B_records) == 0:
-                return {'answer': 'No records found with the given parameters.', 'response_type': 'KTS'}
+                return {'answer': f'No records found for {station} station under {model}.', 'response_type': 'KTS'}
             
             record_summary['Total'] = {'passed': A_passed + B_passed, 'failed': record_summary['A']['failed'] + record_summary['B']['failed']}
             
@@ -444,7 +481,6 @@ class ProductionDB:
         csv_data = []
         for schema in projectList:
             schema_summary = {}
-            to_csv = {'schema': schema}
             try:
                 conn = self.connect(schema)
                 cursor = conn.cursor()
@@ -460,7 +496,7 @@ class ProductionDB:
                         output = cursor.fetchall()
                         if len(output) > 0:
                             schema_summary.update({table: len(output)})
-                            to_csv.update({table: len(output)})
+                            csv_data.append({'schema': schema, 'table': table, 'output': len(output)})
                     except:
                         continue
                 
@@ -473,7 +509,6 @@ class ProductionDB:
 
             if len(schema_summary) > 0:
                 all_summary.update({schema: schema_summary})
-                csv_data.append(to_csv)
 
         if len(csv_data) == 0:
             return {'answer': "No data available", 'response_type': 'KTS'}
@@ -529,22 +564,60 @@ class ProductionDB:
             cursor.close()
             conn.close()
 
+    def getRejects(self, schema: str, model: str, PO_num: str, station_list: list):
+        process_flow = self._get_columns(schema, model)
+        all_fails = {}
+        conn = self.connect(schema)
+        cursor = conn.cursor(dictionary=True)
+        try:
+            for station in station_list:
+                if station not in process_flow:
+                    return {'answer': f"Invalid station name {station}", 'response_type': 'KTS'}
+
+                query = " SELECT * FROM " + f" {model}_{station} " + """ WHERE `po_num` LIKE %s AND `status` = 0 AND `serial_num` NOT LIKE "%\\_%" """
+                cursor.execute(query, (PO_num,))
+                records = cursor.fetchall()
+                all_fails[station] = records
+            
+            formatted = f"## Failed Units in {model.title()} \n\n"
+            formatted += f"**Schema:** {schema} \n\n"
+            formatted += f"**Model:** {model} \n\n"
+            formatted += f"**PO number:** {PO_num} \n\n"
+
+            filename = f"{model}_fail-units.csv"
+            output_file = open(CSV_PATH + filename, 'w', newline='')
+            writer = csv.DictWriter(output_file, ['serial_num', 'po_num', 'station', 'operator_en', 'shift', 'date_time', 'test_rep', 'remarks'], extrasaction='ignore')
+            writer.writeheader()
+            
+            for stat, rec in all_fails.items():
+                formatted += f"### {stat.title()}: {len(rec)} unit/s \n\n"
+                if len(rec) == 0:
+                    continue
+                
+                # formatted += f"### {stat.title()}: {len(rec)} unit/s \n\n"
+                for i, entry in enumerate(rec, 1):
+                    entry.update({'station': stat})
+                    entry.pop('status')
+                    writer.writerow(entry)
+                    if i <= 10:
+                        formatted += f"{i}. {entry['serial_num']} -- {entry['remarks']} \n\n"
+                
+                if len(rec) > 10:
+                    formatted += f"* Showing 10 of {len(rec)} units * \n\n"
+            
+            output_file.close()
+            return {'answer': formatted, 'csv_file': filename, 'response_type': 'KTS'}
+        
+        finally:
+            cursor.close()
+            conn.close()
+
 # ======= Helper Functions ======= #
 
 def str_formatter(raw_data: List|Dict|Any, data_name: str):
-    output = f"## {data_name} \n\n"
-    if 'Process Flow' in data_name:
-        output += f"**Schema:** {raw_data.pop('schema')} \n\n"
-        output += f"**Model:** {raw_data.pop('model')} \n\n"
+    output = f"## {data_name} \n\n"  
 
-        for i, text in enumerate(raw_data['stations'], 1):
-            output += f" {i}. {text} \n\n"
-    
-    elif 'Active Projects' in data_name:
-        for i, text in enumerate(raw_data, 1):
-            output += f" {i}. {text} \n\n"
-    
-    elif 'Running Models' in data_name:
+    if 'Running Models' in data_name:
         output += f"**Date Coverage:** {raw_data.pop('date')} \n\n"
         output += "<table><tr> <th>Customer</th> <th>Model &amp; Station</th> <th>Output</th> </tr>"
         for schema, models in raw_data.items():
@@ -555,12 +628,6 @@ def str_formatter(raw_data: List|Dict|Any, data_name: str):
                 spanner = ''
         
         output += "</table>"
-
-    elif 'Serial Query' in data_name:
-        output += f"**Schema:** {raw_data.pop('schema')} \n\n"
-        output += f"**Model:** {raw_data.pop('model')} \n\n"
-        table_headers = ['process', 'status', 'date_time', 'operator_en']
-        output += makeTable(table_headers, raw_data)
 
     elif 'WIP' in data_name:
         output += f"**Schema:** {raw_data.pop('schema')} \n\n"

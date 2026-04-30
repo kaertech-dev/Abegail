@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Abegail AI Assistant 🤖</title>
+    <title>Abigail AI Assistant </title>
     <link rel="stylesheet" href="{{ url_for('static', filename='chatroom.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -13,16 +13,6 @@
         <button class="icon-button" id="themeToggle" title="Toggle dark mode">
             <i class="fas fa-moon"></i>
         </button>
-    </div>
-
-    <div class="mini-game" id="mini-game" style="display: none;">
-        <div class="game-header" id="game-header">
-            <button id="new-game" onclick="generate()">New Game</button>
-            <div id="flag-count">Flags: 7</div>
-            <button id="flag-toggle" onclick="flagMode()">Flag</button>
-            <input type="checkbox" id="flag-state" style="display: none;"/>
-        </div>
-        <div class="main-box" id="main-box"></div>
     </div>
 
     <div class="chart-lightbox" id="chart-lightbox" style="display: none;">
@@ -42,8 +32,6 @@
         </div>
 
         <div class="input-help" id="input-help" style="display: none;">
-            <!-- <div class="help-entry" onclick="autoComplete('is <employee name> present?')">"Is &lt;employee name&gt; present?"</div>
-            <div class="help-entry" onclick="autoComplete('how many operators are on time?')">"How many operators are on time?"</div> -->
             <div class="help-entry" onclick="autoComplete('process flow for <schema> <model> <date>')">"process flow for &lt;schema&gt; &lt;model&gt;"</div>
             <div class="help-entry" onclick="autoComplete('get wip for <schema> <model> <PO number> <date>')">"get wip for &lt;schema&gt; &lt;model&gt; &lt;PO number&gt;"</div>
             <div class="help-entry" onclick="autoComplete('serial query <number>')">"serial query &lt;serial number&gt;"</div>
@@ -79,11 +67,6 @@
     
     <!-- Main interface -->
     <div class="center-box" id="center-box">
-        <!-- <div class="cam-buttons" id="cam-buttons" style="display: none;">
-            <button id="camGallery" onclick="showGallery()" title="Show gallery">
-                <i class="fa-regular fa-image"></i>
-            </button>
-        </div> -->
         <div class="main-buttons" id="main-buttons">
             <div class="right-buttons" id="right-buttons">
                 <button id="openWebcam" title="Open webcam window" onclick="toggleWebcam()">
@@ -98,7 +81,7 @@
                 </button>
             </div>
             <div class="chat-header">
-                <h2 ondblclick="launchGame()">🤖 Abegail Chat</h2>
+                <h2>Abigail Chat</h2>
             </div>
         </div>
 
@@ -138,7 +121,7 @@
         </div>
 
         <div class="meeting-view" id="meeting-view" style="display: none;">
-            <p class="meeting-transcript" id="meeting-transcript">Meeting transcript appears here. Try saying "Hey Abegail".</p>
+            <p class="meeting-transcript" id="meeting-transcript">Meeting transcript appears here. Try saying "Hey Abigail".</p>
             <div class="meeting-controls" id="meeting-controls">
                 <button id="start-transcript" title="Start speech recognition" onclick="startRecord()">
                     <i class="fa-solid fa-microphone"></i>
@@ -157,11 +140,11 @@
                 <div class="message-bubble bot"> 
                     <div class="message-content">
                         <div class="avatar bot-avatar">
-                            <img src="{{ url_for('static', filename='images/abegail-removebg-preview.png') }}" alt="Abegail Avatar">
+                            <img src="{{ url_for('static', filename='images/abigail-removebg-preview.png') }}" alt="Abigail Avatar">
                         </div>
 
                         <div>
-                            <div class="bubble">Hello! I'm Abegail, your AI assistant! 😊<br><br>I can help you with:<br>• Company production data & statistics<br>• General knowledge questions<br>• And much more!<br><br>Try asking me anything!</div>
+                            <div class="bubble">Hello! I'm Abigail, your AI assistant! 😊<br><br>I can help you with:<br>• Company production data & statistics<br>• General knowledge questions<br>• And much more!<br><br>Try asking me anything!</div>
                             <div class="timestamp" id="welcomeTime">
                                 <div class="reactions" id="chatReact"></div>
                             </div>
@@ -195,6 +178,19 @@
     </div>
 
     <!-- <img src="{{ url_for('static', filename='images/kaertech_logo.png') }}"> -->
+    <div class="mini-game" id="mini-game" style="display: none;">
+        <div class="game-header" id="game-header">
+            <div id="flag-count">Flags:</div>
+            <button id="new-game" onclick="generate()">New Game</button>
+            <select name="difficulty" id="difficulty">
+                <option value="7">Easy</option>
+                <option value="10" selected>Medium</option>
+                <option value="15">Hard</option>
+                <option value="25">Impossible</option>
+            </select>
+        </div>
+        <div class="main-box" id="main-box"></div>
+    </div>
 
     <!-- Settings Panel -->
     <div class="settings-panel" id="settingsPanel" style="display: none;">
@@ -206,7 +202,7 @@
         </div>
         <div class="settings-content">
             <div class="setting-item">
-                <label>Theme</label>
+                <label ondblclick="launchGame()">Theme</label>
                 <select id="themeSelect">
                     <option value="light">Light</option>
                     <option value="dark">Dark</option>
@@ -303,15 +299,6 @@
             {% endfor %}
         </div>
     </div>
-
-    <!-- <div class="chart-lightbox" id="chart-lightbox" style="display: none;">
-        <div class="canvas-div" id="canvas-div">
-            <canvas id="lightbox"></canvas>
-            <button class="exit-box" id="exit-box" onclick="exitLightbox()">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-    </div> -->
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
