@@ -288,7 +288,7 @@ def update_status():
         return jsonify({"success": False, "message": "Request body must be JSON."}), 400
 
 def gen(camera: VideoCamera):
-    while True:
+    while camera.isOpened():
         frame = camera.get_frame()
         if frame:
             yield (b'--frame\r\n'

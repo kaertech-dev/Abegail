@@ -63,14 +63,50 @@ def format_entry(entry: dict, filter: str) -> str:
 
 # ==================== API CLASS ====================
 
-ACTIVITY_API_URL = os.getenv('ACTIVITY_API_URL', 'http://localhost/activity/api/operator_today')
+ACTIVITY_API_URL = os.getenv('ACTIVITY_API_URL', 'http://127.0.0.1/activity/api/operator_today')
+PRODUCTIVITY_API = os.getenv('PRODUCTIVITY_API', 'http://127.0.0.1/productivity/api/operator_today')
 
 class ActivityAPI:
     def __init__(self, api_url: Optional[str] = None):
-            if api_url is None:
-                api_url = ACTIVITY_API_URL
+        if api_url is None:
+            api_url = ACTIVITY_API_URL
+        
+        self.activity_endpoint = api_url
+    
+    def get_productivity(self, date_suffix: str):
+        url = PRODUCTIVITY_API + date_suffix
+        try:
+            response = requests.get(url, timeout=10, headers={
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            })
+            response.raise_for_status()
+            content_type = response.headers.get('Content-Type', '')
+
+            # Try JSON first
+            if 'application/json' in content_type.lower():
+                result = self._parse_json_response(response)
+                if result:
+                    return result
             
-            self.activity_endpoint = api_url
+            # Fall back to HTML parsing
+            return self._parse_html_response(response)
+        
+        except requests.exceptions.Timeout:
+            return self._build_error('Request timeout', 
+                f'API at {self.activity_endpoint} took too long to respond')
+        
+        except requests.exceptions.ConnectionError:
+            return self._build_error('Connection error',
+                f'Could not connect to {self.activity_endpoint}. Is the server running?')
+        
+        except requests.exceptions.HTTPError as e:
+            return self._build_error('HTTP error',
+                f'API returned error: {e.response.status_code}',
+                e.response.text[:500] if hasattr(e.response, 'text') else None)
+        
+        except Exception as e:
+            return self._build_error('Unknown error', str(e))
     
     def get_all_data(self, date_suffix: str, timeout: int = 10) -> Dict:
         """

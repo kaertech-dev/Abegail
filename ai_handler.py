@@ -6,17 +6,16 @@ import csv
 import spacy
 from datetime import date, datetime
 from typing import List, Optional, Dict, Any
-from date_parser import extractDate
+from date_parser import extractDate, extractDate_new
 from mcp_activity_server import ActivityAPI
-from mcp_attendance_client import get_attendance_service
-from mcp_attendance_server import AttendanceDB
+# from mcp_attendance_client import get_attendance_service
+from mcp_attendance_server import attendance_DB
 from kts_data_handler import ProductionDB, getProdArgs
 
 # DEFAULT_MODEL = 'deepseek-r1:14b'
 DEFAULT_MODEL = 'deepseek-r1:8b'
 
 path_name = './csv_files/'
-filename = ''
 nlp = spacy.load("en_core_web_md")
 ktsData = ProductionDB()
 
@@ -169,93 +168,137 @@ def query_processor(message: str):
         return 'general'
 
 def query_processor_LLM(question: str):
-    ai_input = question + """
-List of tools: {individual_attendance, department_headcount, latest_entries, none applicable}.
-I want to retrieve and filter attendance records from a database. What is the the best tool that would allow me to achieve that goal? And for which employee? Be concise and output only what are needed.
-
-Examples: (Question: "Check Ranbill attendance", Answer: "Tool=individual_attendance Employee=Ranbill"), (Question: "What are the latest attendance records?", Answer: "Tool=latest_entries Employee=None")
-
-Answer:
-Tool=
-Employee="""
-    ai_response = handler_deepseek(ai_input)
+    att_act_intents = {'individual_attendance': 'employee attendance given the name or employee number which starts with KE followed by 4 numbers',
+                       'department_headcount': 'list present employees under a given department',
+                       'latest_entries': 'get the latest attendance records from the database',
+                       'operator_activity': 'retrieve output, cycle time, and status of production operators',
+                    #    'production_data': 'retrieve general production data such as customer, model, station, target, and operator list',
+                       'none_applicable': 'query outside of scope'}
+    
+    main_prompt = f"""Current message: {question} 
+    List of Intents with Description: {att_act_intents} 
+    Instruction: Determine the intent of the user from the list of options, as well as the given employee name if applicable. Be concise and output only what are needed.
+    Answer format: Tool= Employee= """
+    
+    ai_response = handler_deepseek(main_prompt)
     print(ai_response)
     return ai_response
 
-def activity_handler(question: str) -> dict[str, Any]:
-    filters = ''
-
+def activity_handler(question: str, name_call='') -> dict[str, Any]:
+    # Find schema and model for filtering
+    new_filters = {}
     for schema, models in ktsData.models.items():
         if schema in question.lower():
-            filters += f"&customer={schema}"
-        for mod in models:
-            if mod in question.lower():
-                filters += f"&model={mod}"
+            new_filters['schema'] = schema
+            for mod in models:
+                if mod in question.lower():
+                    new_filters['model'] = mod
 
-    # set date input and other filters for api endpoint
+    # Set date and other filters for api endpoint
     curr_date = extractDate(question)[0]
-    api_date = f'?start_date={curr_date}&end_date={curr_date}' + filters
+    # print('API date:', curr_date+filters)
+    api_date = f'?start_date={curr_date}&end_date={curr_date}'
+    act_filters = api_date + f"&customer={new_filters.get('schema','')}&model={new_filters.get('model','')}"
+    prod_filters = api_date + f"&db_name={new_filters.get('schema','')}"
 
-    # retrieve records from api
+    # Retrieve records from api
     activityService = ActivityAPI()
-    
-    for fail_ctr in range(5):
-        api_response = activityService.get_all_data(api_date)
-        if api_response['success']:
+
+    api_ok = False
+    prod_ok = False
+    for fail_ctr in range(3):
+        if not api_ok:
+            api_response = activityService.get_all_data(act_filters)
+            if api_response['success']:
+                api_ok = True
+        
+        if not prod_ok:
+            prod_response = activityService.get_productivity(prod_filters)
+            if prod_response['success']:
+                prod_ok = True
+        
+        if api_ok and prod_ok:
             break
 
-    if fail_ctr == 4:
-        print("API failed after 5 times. Returning...")
-        return {'answer': 'API timeout', 'response_type': 'activity'}
+    # If either fetch fails, return with timeout
+    if not (api_ok and prod_ok):
+        print("API failed after 3 times. Returning...")
+        return {'answer': 'Activity/Productivity API timeout. Please try again.', 'response_type': 'activity'}
     
     records = api_response['data']['records']
+    util_records = prod_response['data']['records']
+
+    # Summarize util% for easier retrieval later
+    util_summary = {}
+    for ur in util_records:
+        key = flatten(ur['operator_en'])
+        mod_stt = f'{ur['Model'].lower()}_{ur['Station'].lower()}'
+        if key not in util_summary:
+            util_summary[key] = {mod_stt: ur['%UTIL']}
+        else:
+            util_summary[key].update({mod_stt: ur['%UTIL']})
     
-    # prepare csv file for writing
-    filename = 'activity_' + curr_date + '.csv'
+    # Prepare csv file for writing
+    if new_filters.get('schema'):
+        filename = 'activity_' + new_filters.get('schema') + '_' + curr_date + '.csv'
+    else:
+        filename = 'activity_' + curr_date + '.csv'
     csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
-    writer = csv.DictWriter(csvfile, fieldnames=['Customer', 'Model', 'Station', 'Operator', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status'], extrasaction='ignore')
+    writer = csv.DictWriter(csvfile, fieldnames=
+                            ['Customer', 'Model', 'Station', 'Operator', 'Operator Code', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status', 'Util(%)'],
+                            extrasaction='ignore')
     writer.writeheader()
 
-    # remove serial numbers and rename target to make it easier for Deepseek to parse
+    # Pre-process the records for easier parsing by Deepseek, and write to csv
+    filtered_records = []
     for r in records:
-        writer.writerow(r)
-        r['Target Cycle Time(s)'] = r.pop('Target(s)')
+        # Remove serial numbers
         r.pop('serial_num')
-    
-    return {'csv_file': filename, 'raw_records': records, 'instructions': "Refer to people by name but also give their employee number. Lower cycle time means above target."}
+        r['Operator Code'] = r.pop('operator_code')
+        # Retrieval util%
+        util_dict = util_summary.get(flatten(r['Operator'])) or util_summary.get(r['Operator Code'])
+        if util_dict is not None:
+            key = f'{r['Model'].lower()}_{r['Station'].lower()}'
+            r['Util(%)'] = util_dict[key]
+        # Write to csv
+        writer.writerow(r)
+        # Rename Target to Target Cycle Time
+        r['Target Cycle Time(s)'] = r.pop('Target(s)')
 
-def attendance_handler(question: str, tool_call: str, default_name: str) -> dict[str, Any]:
+        # Filter the records if name was given
+        if name_call == '':
+            filtered_records.append(r)
+        elif same_name(name_call, r['Operator']):
+            filtered_records.append(r)
+        else:
+            filtered_records.append(r)
+    
+    # print('Filtered --', filtered_records)
+    
+    return {'csv_file': filename, 'raw_records': filtered_records, 
+            'instructions': "Include all details for all applicable entries. Lower cycle time than target is good."}
+
+def attendance_handler(question: str, tool_call: str, emp_id: str) -> dict[str, Any]:
     result = ''
+    filename = ''
     chartable = False
-    attendanceService = get_attendance_service()
     date_input = extractDate(question)
+    # Next step: no rigid intents, just prepare a template SQL query that will be filled out by Deepseek
 
-    processed = nlp(question)
-    entities = [ent.text for ent in processed.ents]
-
-    name_match = re.search(r'Employee=(\w+)', tool_call)
-    if name_match and 'Not' not in name_match.group(1) :
-        emp_id = name_match.group(1)
-    elif emp_num := re.search(r'\s+(KE\d+)\s*', question, re.IGNORECASE):
-        emp_id = emp_num.group(1)
-    elif emp_match := re.search(r'is (\w+) present', question, re.IGNORECASE):
-        emp_id = emp_match.group(1)
-    elif entities:
-        emp_id = entities[-1]
-    else:
-        emp_id = default_name
-    
-    # print("Employee identifier: ", emp_id)
+    # employee_list = attendance_DB().employees
 
     if len(date_input) > 1:
-        result = attendanceService.get_attendance_range(date_input[0], date_input[1], emp_id)
+        result = attendance_DB().get_records_by_range(date_input[0], date_input[1], emp_id)
+        filename = f"{emp_id.replace(' ','')}_attendance_{date_input[0]}_{date_input[1]}.csv"
         chartable = True
     
     elif r'individual_attendance' in tool_call:
-        result = attendanceService.check_presence(emp_id, date_input[0])
+        result = attendance_DB().get_records_by_date(date_input[0], emp_id)
+        filename = f"{emp_id.replace(' ','')}_attendance_{date_input[0]}.csv"
 
     elif r'latest_entries' in tool_call:
-        result = attendanceService.get_latest_entries(None, None)
+        result = attendance_DB().get_latest_entries(None, None)
+        filename = f"latest_attendance_{date_input[0]}.csv"
             
     elif r'department_headcount' in tool_call:
         dept_param = ''
@@ -265,30 +308,28 @@ def attendance_handler(question: str, tool_call: str, default_name: str) -> dict
                     dept_param = true_name
         
         if not dept_param:
-            found_depts = [dept.lower() for dept in departments if dept.lower() in question.lower()]
-            dept_param = found_depts[0]
-        start_time = datetime.now().time()
-        result = attendanceService.department_headcount(dept_param, date_input[0], start_time)
+            found_depts = [dept for dept in departments if dept.lower() in question.lower()]
+            dept_param = 'all' if not found_depts else found_depts[0]
+
+        result = attendance_DB().get_present_employees(date_input[0], datetime.now().time(), dept_param)
+        filename = f"{dept_param}_attendance_{date_input[0]}.csv"
     
-    else:
-        directToDB = AttendanceDB()
-        # print('fallback. ', date_input)
-        return {'error': directToDB.get_records_by_date(date_input[0], None), 'instructions': 'Include the KE number, timestamp, and location'}
-        
-    idx = result.find('.csv') + 4
-    if idx > 3:
-        filename = result[:idx]
-        return {'answer': result[idx:], 'csv_file': filename, 'with_chart': chartable, 'response_type': 'attendance'}
-    else:
-        return {'answer': result, 'response_type': 'attendance'}
+    csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
+    writer = csv.DictWriter(csvfile, fieldnames=['employee_name', 'employee_num', 'department', 'timestamp'], extrasaction='ignore')
+    writer.writeheader()
+
+    text = '# Attendance Records \n\n'
+    for i, rec in enumerate(result, 1):
+        if i <= 10:
+            text += f'{i}. **{rec['employee_name']}** ({rec['employee_num']}) -- {rec['timestamp']} \n\n'
+        writer.writerow(rec)
+    
+    if len(result) > 10:
+        text += f"\n*Showing first 10 of {len(result)} records* \n\n"
+
+    return {'preformat': text, 'raw_records': result, 'csv_file': filename, 'with_chart': chartable}
 
 def kts_handler(question: str):
-    # No need to parse schema and model if serial query
-    if getProdArgs().command == 'serial query':
-        if serial_match := re.search(r'K\d{11}', question, re.IGNORECASE):
-            getProdArgs().serial = serial_match.group(0)
-            return ktsData.execute(getProdArgs().command, getProdArgs())
-    
     # For commands with no arguments needed
     if getProdArgs().check():
         return ktsData.execute(getProdArgs().command, getProdArgs())
@@ -299,10 +340,9 @@ def kts_handler(question: str):
         if schema in question or schema in q_alt or getProdArgs().schema == schema:
             getProdArgs().schema = schema
             if not getProdArgs().model:
-                found_models = [mod for mod in models if (mod in question) or (mod in q_alt)]
-                if found_models:
-                    getProdArgs().model = found_models[0]
-                    break
+                for mod in models:
+                    if mod in question.split() or mod+' ' in question:
+                        getProdArgs().model = mod
     
     # If no schema, try to look for model directly
     if not getProdArgs().schema:
@@ -320,27 +360,24 @@ def kts_handler(question: str):
 
     # print("After schema/model check:", getProdArgs())
     if not getProdArgs().schema:
+        getProdArgs().clear()
         return {'answer': f"Schema is either missing or not an active project.", 'response_type': 'KTS'}
     
     if getProdArgs().command == 'get wip' or getProdArgs().command == 'rejects' or getProdArgs().command == 'station details' or getProdArgs().command == 'raw data':
         if getProdArgs().model and not getProdArgs().po_num:
             # Search query for PO argument
             po_list = ktsData._show_all_PO(getProdArgs().schema, getProdArgs().model)
-            found_po = [po['po_num'] for po in po_list if po['po_num'] in question]
-            if not found_po:
-                error = f"Select PO to view for {getProdArgs().command}: \n\n" + ', '.join([entry['po_num'] for entry in po_list])
-                return {'answer': error, 'response_type': 'KTS'}
-            else:
-                getProdArgs().po_num = found_po[0]
+            getProdArgs().po_num = po_list[0]['po_num']
         
         if getProdArgs().model and not getProdArgs().stationList:
             # Search query for station argument
             question = ktsData.detectAlias(question)
             process_list = ktsData._get_columns(getProdArgs().schema, getProdArgs().model)
-            process_list.insert(0, 'depanel')
             if not process_list:
                 getProdArgs().clear()
                 return {'answer': 'No stations in the database.', 'response_type': 'KTS'}
+            
+            process_list.insert(0, 'depanel')
 
             # If multiple stations, split them into a list
             inputs = [q.strip(',') for q in question.split()]
@@ -348,106 +385,132 @@ def kts_handler(question: str):
                 inputs = [q.strip() for q in question.split(',')]
             
             found_proc = [val for val in process_list if (val == question) or (val in inputs)]
-            if 'all' in question.lower():
+            if 'all station' in question.lower() or not found_proc:
                 getProdArgs().stationList = process_list
-            elif not found_proc:
-                error = f"Select {getProdArgs().model} station/s to view for {getProdArgs().command}: \n\n" + ', '.join(process_list) + ', or All'
-                return {'answer': error, 'response_type': 'KTS'}
+                print(process_list)
             else:
-                # getProdArgs().station = found_proc[0]
                 getProdArgs().stationList = found_proc
 
     if getProdArgs().check():
         # Final argument check
         return ktsData.execute(getProdArgs().command, getProdArgs())
+        # return {'preformat': text, 'raw_records': result, 'csv_file': filename}
     else:
         # If query fails the final argument check, it's most likely not a KTS query
         getProdArgs().clear()
         return None
 
-def ask_general_question(question: str, context: Optional[List], default_name: Optional[str]):
+def ask_general_question(question: str, context: List, default_name: Optional[str]):
     """Query handler with reasoning"""
     MODEL_NAME = _get_model_name()
 
-    KTS_keywords = {'raw data': 'csv file with raw data of station output summary under the given model', 'get wip': 'input and output summary of a work-in-progress model', 
-                    'station details': 'csv file with raw data of station output summary under the given model', 'active projects': 'list of active projects', 
-                    'serial query': 'find the model given a serial number that starts with K followed by 11 numbers', 
-                    'process flow': 'list of manufacturing stations under a certain model', 'running models': 'list of running models',
-                    'list all PO': 'list of purchase orders for a model', 'last running PO': 'most recent purchase order for a model',
-                    'rejects': 'quantity of failed units of a given model', 'none applicable': 'query outside of scope'}
+    KTS_keywords = {'station details': 'status and analysis update about the output summary of a model',
+                    'raw data': 'csv file with raw data of station output summary of a model',
+                    'process flow': 'list of manufacturing stations under a certain model',
+                    'get wip': 'input and output summary of a work-in-progress model',
+                    'last running PO': 'most recent purchase order for a model',
+                    'rejects': 'quantity of failed units of a given model',
+                    'list all PO': 'list of purchase orders for a model',
+                    'active projects': 'list of active projects',
+                    'running models': 'list of running models',
+                    'none applicable': 'query outside of scope'}
+    
+    addtl_keywords = {'individual_attendance': 'attendance of an employee',
+                      'latest_entries': 'get the latest attendance records from the database',
+                      'department_headcount': 'list present employees under a given department',
+                    #   'production_data': 'retrieve general production activity of operators',
+                      'operator_activity': 'productivity details such as assigned station, output, cycle time versus target, and utilization of an operator'}
     
     # context_section = f" Recent conversation: {context}\n" if context else ""
+
+    K_serial = re.search(r'K(\d{11})', question) or re.search(r'KLLM(\d{8})', question)
+    if K_serial:
+        getProdArgs().command = 'serial query'
+        getProdArgs().serial = K_serial.group(0)
     
     handler_response = {}
-    mcp_section = ''
-    filename = ''
-    kts_result = {}
+    tool_call = ''
+    name_call = ''
+    query_type = 'general'
 
-    query_type = query_processor(question)
-    if query_type == 'attendance':
-        getProdArgs().clear()
-        # Attendance Query
-        question = detectAlias(question)
-        tool_call = query_processor_LLM("Past conversation: " + str(context) + "Current query: " + question)
-        handler_response = attendance_handler(question, tool_call, default_name)
+    question = detectAlias(question)
 
-        if handler_response.get('answer'):
-            return handler_response
-        else:
-            mcp_section = f"Attendance Records: {handler_response['error']}"
-    elif query_type == 'activity':
-        getProdArgs().clear()
-        # Activity Query
-        handler_response = activity_handler("Current query: " + question)
-        if handler_response.get('answer'):
-            return handler_response
-        mcp_section = f"Activity Records: {handler_response['raw_records']}"
-        filename = handler_response['csv_file']
+    past = "Past messages:"
+    for cont in context[-2:]:
+        past += str(cont)
+
+    kts_prompt = past + f"""Current message: {question} 
+    List of Intents with Description: {KTS_keywords | addtl_keywords} 
+    Instruction: Determine the intent of the user from the list of options, as well as the given employee name if applicable. Be concise and output only what is needed.
+    Answer format: Tool= Employee="""
+    if getProdArgs().command:
+        handler_response = kts_handler(question)
+        return handler_response
     else:
-        # Traceability Query
-        past = "Past messages:"
-        for cont in context[-2:]:
-            past += str(cont)
-
-        kts_prompt = past + f"""Current message: {question} 
-        List of Intents with Description: {KTS_keywords} 
-        Instruction: Determine the intent of the user from the list of available options. Be concise and output only what is needed."""
-        if getProdArgs().command:
-            kts_result = kts_handler(question)
-            if kts_result is not None and kts_result != {}:
-                return kts_result
-
-        handler = handler_deepseek(kts_prompt)
-        print(handler)
-        if 'none applicable' not in handler:
-            for key in KTS_keywords.keys():
-                if key.lower() in handler.lower():
-                    if not getProdArgs().command:
-                        getProdArgs().command = key
-                    if not getProdArgs().date_time:
-                        getProdArgs().date_time = extractDate(question, None)
-                    kts_result = kts_handler(question)
-                    # print("Obj class:", getProdArgs())
-        
-        if kts_result is not None and kts_result != {}:
-            return kts_result
+    # Determine scope, intent, and employee name if applicable
+        handler = handler_deepseek(kts_prompt).lower()
+        print('Deepseek --', handler)
+    # Parse the tool call determined by Deepseek
+    if get_tool := re.search(r'Tool=\s*(\w+)', handler, re.IGNORECASE):
+        tool_call = get_tool.group(1)
     
-    # If query gets to this point, it's a general question or fallback from attendance/activity with records
-    getProdArgs().clear()
+    # Parse the employee name determined by Deepseek
+    if get_name := re.search(r'Employee=\s*(\w+.+)', handler, re.IGNORECASE):
+        name_call = get_name.group(1).lower()
+    elif get_KE := re.search(r'(?!<\w)(KE|LL)(\d{1,4})', question, re.IGNORECASE):
+        digits = get_KE.group(2)
+        while len(digits) < 4:
+            digits = '0' + digits
+        name_call = 'KE' + digits
+    
+    if 'individual_attendance' in tool_call or 'department_headcount' in tool_call or 'latest_entries' in tool_call:
+        query_type = 'attendance'
+        # Attendance Query
+        getProdArgs().clear()
+        handler_response = attendance_handler(question, tool_call, name_call)
+    elif 'production_data' in tool_call or 'operator_activity' in tool_call:
+        query_type = 'activity'
+        # Activity Query
+        getProdArgs().clear()
+        handler_response = activity_handler("Current query: " + question, name_call)
+        if handler_response.get('answer'):
+            return handler_response
+    else:
+        for key in KTS_keywords.keys():
+            if key.lower() in handler:
+                # if not getProdArgs().command:
+                getProdArgs().command = key
+                if not getProdArgs().date_time:
+                    getProdArgs().date_time = extractDate(question, None)
+                handler_response = kts_handler(question)
+                query_type = 'KTS'
+                # print("Obj class:", getProdArgs())
+        # if kts_result is not None and kts_result != {}:
+        #     return kts_result
+    
+    # getProdArgs().clear()
+    reduced_context = ''
+    for cont in context[-5:]:
+        reduced_context += str(cont)
     full_prompt = f"""
-You are Abigail, an AI assistant for checking the company database for attendance and production data, but you can also answer any kind of queries under the sun.
-Be informative, friendly, and concise.
-Provide specific examples from the given data if applicable.
-If no records are given, alert the user that you may not answer accurately.
+Today is {date.today()}.
+Your name is Abigail, an informative and helpful AI assistant of a manufacturing company.
+Be friendly, conversational, and concise.
+Provide examples from the given data if applicable.
+Do not create datapoints that do not exist.
 
-Previous conversations: {context}
-Records: {mcp_section}
+Previous conversations: {reduced_context}
+Records: {handler_response.get('raw_records')}
 {handler_response.get('instructions', '')}
 Current query: {question}
 """
     result = handler_deepseek(full_prompt)
-
-    return {'answer': result, 'csv_file': filename, 'response_type': query_type}
+    final_output = {'answer': handler_response.get('preformat', '') + result, 'response_type': query_type}
+    if 'with_chart' in handler_response:
+        final_output['with_chart'] = handler_response.get('with_chart')
+    if 'csv_file' in handler_response:
+        final_output['csv_file'] = handler_response.get('csv_file')
+    return final_output
 
 def ask_with_file_parse(filename: str, question: str):
     if filename == '' and '.csv' in question:
@@ -483,11 +546,29 @@ Answer:"""
         return {'answer': result, 'response_type': 'general'}
 
 def detectAlias(user_query: str):
-    name_bank = {'kokoy': 'ranbill cadayona', 'rick': 'cesar modina', 'boss mb': 'mickael bouffaut', 'in the house': 'present', 'in the haus': 'present'}
+    name_bank = {'kokoy': 'ranbill cadayona', 'rick': 'cesar modina', 'pj': 'paul john'}
     for nick, name in name_bank.items():
         if nick in user_query.lower():
             user_query = user_query.replace(nick, name)
     return user_query
+
+def flatten(name: str):
+    return name.lower().replace('-','').replace(',', '')
+
+def same_name(name_1: str, name_2: str):
+    name_1 = name_1.lower().replace('-','').replace(',', ' ').split()
+    name_2 = name_2.lower().replace('-','').replace(',', ' ').split()
+
+    ctr = 0
+    for part_1 in name_1:
+        for part_2 in name_2:
+            if part_1 == part_2:
+                ctr+=1
+    
+    if ctr > 0:
+        return True
+    else:
+        return False
 
 def _build_reasoning_context(question: str, query_analysis: Optional[Dict]) -> str:
     """Build context to help AI understand the query better"""

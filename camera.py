@@ -35,10 +35,13 @@ _ = search_identity(
 # ----- main class and methods ----- #
 class VideoCamera:
     def __init__(self):
-        self.cap = cv2.VideoCapture(0)
+        try:
+            self.cap = cv2.VideoCapture(0)
         # self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         # self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         # self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+        except Exception as e:
+            print(e)
 
         self.faces_coordinates = []
 

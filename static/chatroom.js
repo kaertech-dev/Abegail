@@ -1159,17 +1159,17 @@ function addMessage(message, isUser = false, metadata = {}) {
     }
     else if (metadata.csv && fileArray.length > 1 && isUser == false) {
         for (let entry of fileArray) {
-            // console.log(entry);
+            console.log(entry);
             if (entry != '') {
                 let new_button = `
                 <div class="csv-action">
                     <button type="button" class="download-csv" onclick="downloadCSV('${entry}')" title="download csv">Download csv file</button>
                 </div>`;
-                messageContent = messageContent.replace("<p> placeholder </p>", new_button);
+                messageContent = messageContent.replace(entry, new_button);
             }
-            else {
-                messageContent = messageContent.replace("<p> placeholder </p>", '');
-            }
+            // else {
+            //     messageContent = messageContent.replace("<p> placeholder </p>", '');
+            // }
         }
     }
     

@@ -54,6 +54,17 @@ class AttendanceDB:
     
     def __init__(self):
         self.config = DB_CONFIG
+        self.employees = []
+
+        conn = self.connect()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            query = " SELECT `employee_num`, `employee_name`, `department` FROM `list`"
+            cursor.execute(query)
+            self.employees = cursor.fetchall()
+        finally:
+            cursor.close()
+            conn.close()
     
     def connect(self):
         """Create database connection"""
@@ -68,24 +79,30 @@ class AttendanceDB:
         try:
             cursor = conn.cursor(dictionary=True)
             
-            if employee_identifier:
-                query = """
-                    SELECT * FROM `raw` 
-                    WHERE DATE(`timestamp`) = %s 
-                    AND (
-                        `employee_name` LIKE %s 
-                        OR `employee_num` LIKE %s
-                    )
-                    ORDER BY `timestamp` ASC
-                """
-                search_pattern1 = f"%{employee_identifier}%"
-                search_pattern2 = f"{employee_identifier}"
-                cursor.execute(query, (target_date, search_pattern1, search_pattern2))
-            else:
-                query = "SELECT * FROM `raw` WHERE DATE(`timestamp`) = %s ORDER BY `timestamp` ASC"
-                cursor.execute(query, (target_date,))
-            
+            name_parts = employee_identifier.lower().replace(',', '').split()
+            query = """
+SELECT t1.*, t2.`department` FROM `raw` t1
+INNER JOIN `list` t2 ON t1.`employee_num` = t2.`employee_num`
+WHERE DATE(`timestamp`) = %s 
+AND (
+    t1.`employee_name` LIKE %s 
+    OR t1.`employee_num` LIKE %s
+)
+ORDER BY `timestamp` ASC
+            """
+            search_pattern1 = f"%{name_parts[0]}%"
+            search_pattern2 = f"{employee_identifier}"
+            cursor.execute(query, (target_date, search_pattern1, search_pattern2))
             records = cursor.fetchall()
+
+            filtered_records = []
+            if len(name_parts) > 1:
+                for rec in records:
+                    near_match = [part for part in name_parts[1:] if part in rec['employee_name'].lower()]
+                    if near_match:
+                        filtered_records.append(rec)
+                records = filtered_records
+
             return self._add_locations(records)
             
         finally:
@@ -98,28 +115,39 @@ class AttendanceDB:
         conn = self.connect()
         try:
             cursor = conn.cursor(dictionary=True)
-            
-            if employee_identifier:
-                query = """
-                    SELECT * FROM `raw` 
-                    WHERE DATE(`timestamp`) BETWEEN %s AND %s 
-                    AND (
-                        `employee_name` LIKE %s 
-                        OR `employee_num` LIKE %s
-                    )
-                    ORDER BY `timestamp` ASC
-                """
-                search_pattern = f"%{employee_identifier}%"
-                cursor.execute(query, (start_date, end_date, search_pattern, search_pattern))
-            else:
+            if employee_identifier is None:
                 query = """
                     SELECT * FROM `raw` 
                     WHERE DATE(`timestamp`) BETWEEN %s AND %s 
                     ORDER BY `timestamp` ASC
                 """
                 cursor.execute(query, (start_date, end_date))
-            
+                records = cursor.fetchall()
+                return self._add_locations(records)
+
+            name_parts = employee_identifier.lower().replace(',', '').split()
+            query = """
+SELECT t1.*, t2.`department` FROM `raw` t1
+INNER JOIN `list` t2 ON t1.`employee_num` = t2.`employee_num`
+WHERE DATE(`timestamp`) BETWEEN %s AND %s 
+AND (
+    t1.`employee_name` LIKE %s 
+    OR t1.`employee_num` LIKE %s
+)
+ORDER BY `timestamp` ASC
+            """
+            search_pattern = f"%{name_parts[0]}%"
+            cursor.execute(query, (start_date, end_date, search_pattern, search_pattern))
             records = cursor.fetchall()
+
+            filtered_records = []
+            if len(name_parts) > 1:
+                for rec in records:
+                    near_match = [part for part in name_parts[1:] if part in rec['employee_name'].lower()]
+                    if near_match:
+                        filtered_records.append(rec)
+                records = filtered_records
+            
             return self._add_locations(records)
             
         finally:
@@ -164,16 +192,16 @@ class AttendanceDB:
             cursor = conn.cursor(dictionary=True)
             if dept is None: # all departments
                 cursor.execute("""
-                    SELECT DISTINCT employee_name, employee_num
+                    SELECT DISTINCT `employee_name`, `employee_num`, `department`
                     FROM `list`
-                    ORDER BY employee_name
+                    ORDER BY `employee_name`
                 """)
             else:
                 cursor.execute("""
-                    SELECT DISTINCT employee_name, employee_num
+                    SELECT DISTINCT `employee_name`, `employee_num`, `department`
                     FROM `list`
                     WHERE `department` LIKE %s
-                    ORDER BY employee_name
+                    ORDER BY `employee_name`
                 """, (f'%{dept}%',))
             return cursor.fetchall()
         finally:
@@ -187,7 +215,7 @@ class AttendanceDB:
             cursor = conn.cursor(dictionary=True)
             if start_time is None:
                 start_time = time(7, 0)
-            if dept is None: # get all departments
+            if dept == 'all': # get all departments
                 cursor.execute("""
                     SELECT DISTINCT employee_name, employee_num
                     FROM `raw`
@@ -196,14 +224,13 @@ class AttendanceDB:
                 """, (target_date, start_time))
             else:
                 cursor.execute("""
-                    SELECT t2.employee_name, t1.employee_num, MIN(t1.timestamp), t2.department
-                    FROM `raw` t1
-                    INNER JOIN `list` t2 ON t1.employee_num = t2.employee_num
-                    WHERE t2.department LIKE %s
-                    AND DATE(t1.`timestamp`) = %s
-                    AND TIME(t1.`timestamp`) <= %s
-                    GROUP BY t1.employee_num
-                    ORDER BY t2.employee_name
+SELECT t1.`employee_num`, t1.`employee_name`, t1.`department`, MIN(t2.`timestamp`) as 'timestamp' FROM `list` t1
+LEFT JOIN `raw` t2 ON t1.`employee_num` = t2.`employee_num` 
+WHERE t1.`department` = %s
+AND DATE(t2.`timestamp`) = %s
+AND TIME(t2.`timestamp`) <= %s
+GROUP BY t1.`employee_num`
+ORDER BY MIN(t2.`timestamp`)
                 """, (f'%{dept}%', target_date, start_time,))
             return cursor.fetchall()
         finally:
@@ -254,6 +281,14 @@ class AttendanceDB:
             device_ip = record.get('device_ip', '')
             record['location'] = DEVICE_LOCATIONS.get(device_ip, device_ip)
         return records
+
+_attendance_db = None
+def attendance_DB():
+    global _attendance_db
+    if _attendance_db is None:
+        _attendance_db = AttendanceDB()
+    return _attendance_db
+
 
 # ==================== UTILITY FUNCTIONS ====================
 departments = ['Top Management',
