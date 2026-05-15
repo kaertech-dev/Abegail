@@ -1088,13 +1088,92 @@ function textToSpeech() {
 }
 
 let curr_chart_id = 0;
+function addMessage_plain(message, isUser = false, metadata = {}) {
+    const messagesContainer = document.getElementById('chat-messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message-bubble ${isUser ? 'user' : 'bot'}`;
+    messageDiv.dataset.messageId = metadata.id || `msg_${Date.now()}_${Math.random()}`;
+
+    const avatarContent = '<img src="/static/images/abigail-removebg-preview.png" alt="Abigail" class="avatar-image">';
+    const avatarClass = 'bot-avatar';
+
+    const bubbleClass = 'bubble';
+    
+    // Render markdown if available
+    let messageContent = escapeHtml(message);
+    if (typeof marked !== 'undefined') {
+        try {
+            messageContent = marked.parse(message);
+        } catch (e) {
+            console.warn('Markdown parsing failed:', e);
+        }
+    }
+
+    let chart_viewer = '';
+    if (metadata.response_type === 'chart' && isUser == false) {
+        const chartNodes = document.querySelectorAll('canvas');
+        const chart_id = chartNodes.length - 1;
+        curr_chart_id = chart_id;
+        chart_viewer = `
+<div style="height: 200px; max-width: 100%; background: white; margin-top: 10px;">
+    <canvas id="myChart_${chart_id}"></canvas>
+</div>`;
+    }
+
+    let csvButton = '';
+    const fileArray = [];
+    if (metadata.csv){
+        fileArray.push(...metadata.csv.split(" "));
+        // console.log(fileArray);
+        for (let entry of fileArray) {
+            // console.log(entry);
+            if (messageContent.search(entry) != -1) {
+                let new_button = `
+                <div class="csv-action">
+                    <button type="button" class="download-csv" onclick="downloadCSV('${entry}')" title="download csv">Download csv file</button>
+                </div>`;
+                messageContent = messageContent.replace(entry, new_button);
+            }
+            else {
+                const chartButton = metadata.with_chart ? `<button type="button" class="download-csv" onclick="viewChart('${metadata.csv}')">View chart</button>` : '';
+                csvButton += `
+                    <div class="csv-action">
+                        <button type="button" class="download-csv" onclick="downloadCSV('${metadata.csv}')" title="download csv">${metadata.csv}</button>
+                        ${chartButton}
+                    </div>
+                `;
+            }
+        }
+    }
+    
+    messageDiv.innerHTML = `
+        <div class="message-content">
+            <div style="flex: 1; margin-left: 90px">
+                <div class="${bubbleClass}">
+                    ${messageContent}
+                    ${csvButton}
+                    ${chart_viewer}
+                </div>
+            </div>
+        </div>
+    `;
+    
+    messagesContainer.appendChild(messageDiv);
+    
+    if (autoScroll) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+    
+    playSound('click');
+}
+
 function addMessage(message, isUser = false, metadata = {}) {
     const messagesContainer = document.getElementById('chat-messages');
     const messageDiv = document.createElement('div');
     messageDiv.className = `message-bubble ${isUser ? 'user' : 'bot'}`;
     messageDiv.dataset.messageId = metadata.id || `msg_${Date.now()}_${Math.random()}`;
     
-    const avatarContent = isUser ? '' : '<img src="/static/images/abigail-removebg-preview.png" alt="Abigail" class="avatar-image">';
+    const avatarContent = isUser ? '<i class="fa-solid fa-circle-user"></i>' : '<img src="/static/images/abigail-removebg-preview.png" alt="Abigail" class="avatar-image">';
     const avatarClass = isUser ? 'user-avatar' : 'bot-avatar';
     
     let badges = '';
@@ -1198,7 +1277,7 @@ function addMessage(message, isUser = false, metadata = {}) {
     playSound('click');
 }
 
-function showTypingIndicator() {
+function showTypingIndicator(step='') {
     const messagesContainer = document.getElementById('chat-messages');
     const typingDiv = document.createElement('div');
     typingDiv.className = 'message-bubble bot';
@@ -1207,6 +1286,7 @@ function showTypingIndicator() {
         <div class="message-content">
             <div class="avatar bot-avatar"><img src="/static/images/abigail-removebg-preview.png" alt="Abigail" class="avatar-image"></div>
             <div class="typing-indicator">
+                <p>${step}</p>
                 <span></span>
                 <span></span>
                 <span></span>
@@ -1324,6 +1404,153 @@ async function sendMessage(withTranscript = false) {
     }
 }
 
+async function New_sendMessage(withTranscript = false) {
+    const input = document.getElementById('chatInput');
+    const sendButton = document.getElementById('chatSend');
+    let message = input.value.trim();
+
+    const fileInput = document.getElementById("file-input");
+    let filename = '';
+
+    if (!message && fileInput.value == '') return;
+
+    if (fileInput.value != '') {
+        submitFile();
+        filename = fileInput.files[0].name;
+        message = `**Uploaded file: ${filename}**\n\n\n` + message;
+    }
+    
+    const msgId = `msg_${Date.now()}_${Math.random()}`;
+    addMessage(message, true, { id: msgId, timestamp: getCurrentTime() });
+    input.value = '';
+    
+    sendButton.disabled = true;
+    input.disabled = true;
+    updateStatus('Processing...', 'processing');
+    showTypingIndicator('Parsing intent');
+
+    if (withTranscript == true) {
+        let full_transcript = document.getElementById("meeting-transcript").innerText;
+        message = `Conversation context: ${full_transcript} User Query: ${message}`;
+        // console.log('Message sent (WITH transcript)');
+    }
+    // else {
+    //     console.log('Message sent (no transcript)');
+    // }
+    
+    try {
+        const response = await fetch('/api/chat/1', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: message,
+                session_id: sessionId,
+                fileAttached: filename
+            })
+        });
+        
+        const data = await response.json();
+        hideTypingIndicator();
+        
+        if (data.error) {
+            addMessage_plain(data.message || 'An error occurred', false, { ...data, response_type: 'error' });
+            // updateStatus('Error', 'error');
+        }
+        else {
+            addMessage_plain(data.message, false, data);
+            // updateStatus('Ready', 'ready');
+            showTypingIndicator('Retrieving data');
+        }
+        
+    } catch (error) {
+        hideTypingIndicator();
+        addMessage('Sorry, there was an error connecting to the server. Please try again.', false, { response_type: 'error' });
+        updateStatus('Error', 'error');
+        console.error('Error:', error);
+    }
+
+    try {
+        const response = await fetch('/api/chat/2', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: message,
+                session_id: sessionId,
+                fileAttached: filename
+            })
+        });
+        
+        const data = await response.json();
+        hideTypingIndicator();
+        
+        if (data.error) {
+            addMessage_plain(data.message || 'An error occurred', false, { ...data, response_type: 'error' });
+            // updateStatus('Error', 'error');
+        }
+        else {
+            if (data.message || data.csv) {
+                addMessage_plain(data.message, false, data);
+                if (data.response_type === 'chart') {
+                    let chartValues = await parseCsv(message);
+                    if (!chartValues.data) {
+                        console.log("Error creating chart");
+                    }
+                    else{
+                        createChart(chartValues.name, chartValues.data, chartValues.labels);
+                    }
+                }
+            }
+            showTypingIndicator('Getting analysis');
+        }
+        
+    } catch (error) {
+        hideTypingIndicator();
+        addMessage('Sorry, there was an error connecting to the server. Please try again.', false, { response_type: 'error' });
+        updateStatus('Error', 'error');
+        console.error('Error:', error);
+    }
+
+    try {
+        const response = await fetch('/api/chat/3', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: message,
+                session_id: sessionId,
+                fileAttached: filename
+            })
+        });
+        
+        const data = await response.json();
+        hideTypingIndicator();
+        
+        if (data.error) {
+            addMessage(data.message || 'An error occurred', false, { ...data, response_type: 'error' });
+            updateStatus('Error', 'error');
+        }
+        else {
+            addMessage(data.message, false, data);
+            updateStatus('Ready', 'ready');
+        }
+        
+    } catch (error) {
+        hideTypingIndicator();
+        addMessage('Sorry, there was an error connecting to the server. Please try again.', false, { response_type: 'error' });
+        updateStatus('Error', 'error');
+        console.error('Error:', error);
+    } finally {
+        sendButton.disabled = false;
+        input.disabled = false;
+        input.focus();
+    }
+}
+
 async function clearChat() {
     if (!confirm('Are you sure you want to clear the chat history?')) {
         return;
@@ -1368,7 +1595,8 @@ function handleKeyPress(event) {
             return;
         }
         event.preventDefault();
-        sendMessage();
+        // sendMessage();
+        New_sendMessage();
     }
 }
 

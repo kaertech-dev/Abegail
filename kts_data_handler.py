@@ -33,7 +33,7 @@ class ProductionArguments:
         self.cont.extend(self.stationList)
         self.cont.extend([self.po_num, self.serial])
         self.cont.extend(self.date_time)
-        return self.cont
+        return str(self.cont)
     
     def __str__(self):
         to_str = f"Command: {self.command} -- Schema: {self.schema} -- Model: {self.model} \n"
@@ -43,17 +43,17 @@ class ProductionArguments:
         return to_str
     
     def check(self):
-        if (self.command == 'get wip' or self.command == 'rejects' or self.command == 'station details' or self.command == 'raw data'):
+        if (self.command == 'get_wip' or self.command == 'rejects' or self.command == 'station_details' or self.command == 'raw_data'):
             if self.schema and self.model and self.po_num and len(self.stationList) > 0:
                 return True
         # elif (self.command == 'station details' or self.command == 'raw data') and self.schema and self.model and (self.station or self.stationList):
         #     return True
-        elif (self.command == 'process flow') or (self.command == 'list all PO') or (self.command == 'last running PO'):
+        elif (self.command == 'process_flow') or (self.command == 'list_all_PO') or (self.command == 'last_running_PO'):
             if self.schema and self.model:
                 return True
-        elif (self.command == 'serial query') and self.serial:
+        elif (self.command == 'serial_query') and self.serial:
             return True
-        elif (self.command == 'active projects') or (self.command == 'running models'):
+        elif (self.command == 'active_projects') or (self.command == 'running_models'):
             return True
         else:
             return False  
@@ -68,12 +68,22 @@ class ProductionArguments:
         self.serial = ''
         self.date_time = []
 
-prodArgs = None
-def getProdArgs():
-    global prodArgs
-    if prodArgs is None:
-        prodArgs = ProductionArguments()
-    return prodArgs
+# prodArgs = None
+# def getProdArgs():
+#     global prodArgs
+#     if prodArgs is None:
+#         prodArgs = ProductionArguments()
+#     return prodArgs
+
+_prod_args_instances = {}
+def getProdArgs(session_id) -> ProductionArguments:
+    global _prod_args_instances
+    
+    if session_id not in _prod_args_instances:
+        _prod_args_instances[session_id] = ProductionArguments()
+        print('Updated:', _prod_args_instances)
+    
+    return _prod_args_instances[session_id]
 
 class ProductionDB:
     """Handle production database operations"""
@@ -83,22 +93,25 @@ class ProductionDB:
         self.models = {}
 
         conn = self.connect('INFORMATION_SCHEMA')
-        cursor = conn.cursor(dictionary=True)
-        # is depanel better? although if may depanel but no main, walang process flow
-        query = """ SELECT DISTINCT `TABLE_SCHEMA`, `TABLE_NAME` FROM `COLUMNS` 
-        WHERE `TABLE_NAME` LIKE '%\\_main' """
-        cursor.execute(query)
-        records = cursor.fetchall()
-        for row in records:
-            schema = row['TABLE_SCHEMA']
-            model = row['TABLE_NAME'].split('_')[0]
-            if schema not in self.models:
-                self.models[schema] = [model]
-            else:
-                self.models[schema].append(model)
-        cursor.close()
-        conn.close()
-        # print(self.models)
+        if conn is not None:
+            cursor = conn.cursor(dictionary=True)
+            # is depanel better? although if may depanel but no main, walang process flow
+            query = """ SELECT DISTINCT `TABLE_SCHEMA`, `TABLE_NAME` FROM `COLUMNS` 
+            WHERE `TABLE_NAME` LIKE '%\\_main' """
+            cursor.execute(query)
+            records = cursor.fetchall()
+            for row in records:
+                schema = row['TABLE_SCHEMA']
+                model = row['TABLE_NAME'].split('_')[0]
+                if schema not in self.models:
+                    self.models[schema] = [model]
+                else:
+                    self.models[schema].append(model)
+            cursor.close()
+        # finally:
+            # cursor.close()
+            conn.close()
+            # print(self.models)
     
     def detectAlias(self, user_query: str):
         word_bank = {'functional test': 'ft', 'visual inspection': 'vi', 'final visual inspection': 'fvi'}
@@ -109,41 +122,41 @@ class ProductionDB:
     
     def execute(self, command: str, args: ProductionArguments):
         # print('entered kts handler -- ', getProdArgs())
-        if 'get wip' in command:
+        if 'get_wip' in command:
             result = self.getWIP(args.schema, args.model, args.po_num, args.stationList, args.date_time)
         
         elif 'rejects' in command:
             result = self.getRejects(args.schema, args.model, args.po_num, args.stationList)
 
-        elif 'station details' in command or 'raw data' in command:
+        elif 'station_details' in command or 'raw_data' in command:
             result = self.getStationDetails(args.schema, args.model, args.po_num, args.stationList, args.date_time)
         
-        elif 'list all PO' in command:
+        elif 'list_all_PO' in command:
             result = self.listPO(args.schema, args.model)
         
-        elif 'last running PO' in command:
+        elif 'last_running_PO' in command:
             result = self.getLatestPO(args.schema, args.model)
 
-        elif 'process flow' in command:
+        elif 'process_flow' in command:
             result = self.getProcessFlow(args.schema, args.model)
         
-        elif 'active projects' in command:
+        elif 'active_projects' in command:
             result = self.getActiveProjects()
         
-        elif 'serial query' in command:
+        elif 'serial_query' in command:
             result = self.serialQuery(args.serial)
         
-        elif 'running models' in command:
+        elif 'running_models' in command:
             result = self.getRunningModels(args.date_time)
 
         else:
-            result = {'answer': '', 'response_type': 'KTS'}
+            result = {'preformat': '', 'response_type': 'KTS'}
 
         if type(result) == str:
             # Final check for outputs of type string
-            result = {'answer': result, 'response_type': 'KTS'}
+            result = {'preformat': result, 'response_type': 'KTS'}
         
-        getProdArgs().clear()
+        # getProdArgs().clear()
         return result
     
     def connect(self, schema: str):
@@ -152,7 +165,9 @@ class ProductionDB:
             self.config['database'] = schema
             return mysql.connector.connect(**self.config)
         except Error as e:
-            raise Exception(f"Database connection error: {e}")
+            # raise Exception(f"Database connection error: {e}")
+            print(f"Database connection error: {e}")
+            return None
     
     # ======= Private Functions ======= #
     def _get_columns(self, schema: str, model: str):
@@ -223,10 +238,11 @@ class ProductionDB:
             conn.close()
     
     def _show_all_PO(self, schema: str, model: str):
+        columns = self._get_columns(schema, model)
         conn = self.connect(schema)
         try:
             cursor = conn.cursor(dictionary=True)
-            query = " SELECT DISTINCT `po_num`, MAX(`date_time`) as `timestamp` FROM " + f"{model}_depanel" + " GROUP BY `po_num` ORDER BY `timestamp` DESC "
+            query = " SELECT DISTINCT `po_num`, MAX(`date_time`) as `timestamp` FROM " + f"{model}_{columns[0]}" + " GROUP BY `po_num` ORDER BY `timestamp` DESC "
             cursor.execute(query)
             return cursor.fetchall()
 
@@ -312,13 +328,14 @@ class ProductionDB:
     def getWIP(self, schema: str, model: str, PO_num: str, station_list: list, date_input: List[str]):
         if len(date_input) == 0:
             date_query = ''
-            date_input = [date.today().isoformat()]
+            offset = date.today()
+            date_input = [offset.isoformat()]
         elif len(date_input) > 1:
             offset = date.fromisoformat(date_input[1]) + timedelta(days=1)
-            date_query = f"AND `date_time` BETWEEN '{date_input[0]} 07:00:00' AND '{offset} 06:59:59' "
+            date_query = f"AND `date_time` < '{offset} 07:00:00' "
         else:
             offset = date.fromisoformat(date_input[0]) + timedelta(days=1)
-            date_query = f"AND `date_time` BETWEEN '{date_input[0]} 07:00:00' AND '{offset} 06:59:59' "
+            date_query = f"AND `date_time` < '{offset} 07:00:00' "
         
         conn = self.connect(schema.lower())
         try:
@@ -365,10 +382,11 @@ class ProductionDB:
                     batch_summary[col].update({'fail': len(fail_entries)})
                 
                 query = " SELECT * FROM " + table_name + " t2 RIGHT JOIN " + f'{model}_{prev_col}' + " t1 ON t1.`serial_num`=t2.`serial_num` "
-                if prev_col == 'depanel':
-                    query += " WHERE t1.`po_num` LIKE %s AND t2.`serial_num` IS NULL"
-                else:
-                    query += " WHERE t1.`po_num` LIKE %s AND t1.`status` = 1 AND t2.`serial_num` IS NULL"
+                query += f" WHERE t1.`po_num` LIKE %s AND t1.`date_time` < '{offset} 07:00:00' "
+                query += f" AND (NOT t2.`date_time` < '{offset} 07:00:00' OR t2.`serial_num` IS NULL)"
+                if prev_col != 'depanel':
+                    query += f" AND t1.`status` = 1 "
+                
                 cursor.execute(query, (PO_num,))
                 wip_entries = cursor.fetchall()
                 if col in station_list:
@@ -385,9 +403,11 @@ class ProductionDB:
                 data.update(values)
                 csv_data.append(data)
 
-            filename = f'wip_{model}_{'_'.join(date_input)}.csv'
+            statlist = [st[0] for st in station_list]
+            filename = f'wip_{model}_{''.join(statlist)}_{'_'.join(date_input)}.csv'
             exportCSV(filename, csv_data)
             result = str_formatter(batch_summary, f'Work in Progress')
+            batch_summary.update({'schema': schema, 'model': model, 'po_num': PO_num, 'date': date_input})
             return {'preformat': result, 'raw_records': batch_summary, 'csv_file': filename, 'response_type': 'KTS'}
 
         finally:
@@ -430,6 +450,9 @@ class ProductionDB:
                 record_summary['depanel'].update({'csv': filename})
 
             for station in columns:
+                if station not in station_list:
+                    continue
+
                 query = """ SELECT * FROM """ + f" {model}_{station} " + """ 
                 WHERE `po_num` = %s AND `shift` = 'A' """ + date_arg + " ORDER BY `date_time` DESC "
                 cursor.execute(query, (po_num,))
@@ -440,27 +463,25 @@ class ProductionDB:
                 cursor.execute(query, (po_num,))
                 B_records = cursor.fetchall()
 
-                if station in station_list:
-                    record_summary[station] = {'A_pass': 0, 'A_fail': len(A_records),
-                                               'B_pass': 0, 'B_fail': len(B_records)}
-                    for rec in A_records:
-                        record_summary[station]['A_pass'] += int(rec['status'])
-                        record_summary[station]['A_fail'] -= int(rec['status'])
-                        if '_' in rec['serial_num']:
-                            record_summary[station]['A_fail'] -= 1
-
-                    for rec in B_records:
-                        record_summary[station]['B_pass'] += int(rec['status'])
-                        record_summary[station]['B_fail'] -= int(rec['status'])
-                        if '_' in rec['serial_num']:
-                            record_summary[station]['B_fail'] -= 1
-                    
-                    filename = f'{model}_{station}_{'-'.join(date_input)}.csv'
-                    exportCSV(filename, A_records + B_records)
-                    filename_comp.append(filename)
-                    record_summary[station].update({'csv': filename})
+                record_summary[station] = {'A_pass': 0, 'A_fail': len(A_records),
+                                            'B_pass': 0, 'B_fail': len(B_records)}
+                for rec in A_records:
+                    record_summary[station]['A_pass'] += int(rec['status'])
+                    record_summary[station]['A_fail'] -= int(rec['status'])
+                    if '_' in rec['serial_num']:
+                        record_summary[station]['A_fail'] -= 1
+                for rec in B_records:
+                    record_summary[station]['B_pass'] += int(rec['status'])
+                    record_summary[station]['B_fail'] -= int(rec['status'])
+                    if '_' in rec['serial_num']:
+                        record_summary[station]['B_fail'] -= 1
+                filename = f'{model}_{station}_{'-'.join(date_input)}.csv'
+                exportCSV(filename, A_records + B_records)
+                filename_comp.append(filename)
+                record_summary[station].update({'csv': filename})
 
             result = str_formatter(record_summary, f"Station Details for {schema} {model}")
+            record_summary.update({'schema': schema, 'model': model, 'po_num': po_num, 'date': ' to '.join(date_input)})
             return {'preformat': result, 'raw_records': record_summary, 'csv_file': ' '.join(filename_comp), 'response_type': 'KTS'}
         
         except Exception as e:

@@ -57,13 +57,14 @@ class AttendanceDB:
         self.employees = []
 
         conn = self.connect()
-        try:
+        if conn is not None:
             cursor = conn.cursor(dictionary=True)
             query = " SELECT `employee_num`, `employee_name`, `department` FROM `list`"
             cursor.execute(query)
             self.employees = cursor.fetchall()
-        finally:
             cursor.close()
+        # finally:
+            # cursor.close()
             conn.close()
     
     def connect(self):
@@ -71,37 +72,43 @@ class AttendanceDB:
         try:
             return mysql.connector.connect(**self.config)
         except Error as e:
-            raise Exception(f"Database connection error: {e}")
+            # raise Exception(f"Database connection error: {e}")
+            print(f"Database connection error: {e}")
+            return None
     
-    def get_records_by_date(self, target_date: date, employee_identifier: str = None) -> List[Dict]:
+    def get_records_by_date(self, target_date: date, employee_identifier: str = '') -> List[Dict]:
         """Get attendance records for a specific date"""
         conn = self.connect()
         try:
             cursor = conn.cursor(dictionary=True)
             
-            name_parts = employee_identifier.lower().replace(',', '').split()
-            query = """
-SELECT t1.*, t2.`department` FROM `raw` t1
-INNER JOIN `list` t2 ON t1.`employee_num` = t2.`employee_num`
-WHERE DATE(`timestamp`) = %s 
-AND (
-    t1.`employee_name` LIKE %s 
-    OR t1.`employee_num` LIKE %s
-)
-ORDER BY `timestamp` ASC
-            """
-            search_pattern1 = f"%{name_parts[0]}%"
-            search_pattern2 = f"{employee_identifier}"
-            cursor.execute(query, (target_date, search_pattern1, search_pattern2))
-            records = cursor.fetchall()
+            if employee_identifier == '':
+                query = """ SELECT t1.*, t2.`department` FROM `raw` t1
+                INNER JOIN `list` t2 ON t1.`employee_num` = t2.`employee_num`
+                WHERE DATE(`timestamp`) = %s 
+                ORDER BY `timestamp` ASC """
+                cursor.execute(query, (target_date, ))
+                records = cursor.fetchall()
+            else:
+                name_parts = employee_identifier.lower().replace(',', '').split()
+                query = """ SELECT t1.*, t2.`department` FROM `raw` t1
+                INNER JOIN `list` t2 ON t1.`employee_num` = t2.`employee_num`
+                WHERE DATE(`timestamp`) = %s 
+                AND (
+                    t1.`employee_name` LIKE %s 
+                    OR t1.`employee_num` LIKE %s
+                )
+                ORDER BY `timestamp` ASC """
+                cursor.execute(query, (target_date, f"%{name_parts[0]}%", f"{employee_identifier}"))
+                records = cursor.fetchall()
 
-            filtered_records = []
-            if len(name_parts) > 1:
-                for rec in records:
-                    near_match = [part for part in name_parts[1:] if part in rec['employee_name'].lower()]
-                    if near_match:
-                        filtered_records.append(rec)
-                records = filtered_records
+                filtered_records = []
+                if len(name_parts) > 1:
+                    for rec in records:
+                        near_match = [part for part in name_parts[1:] if part in rec['employee_name'].lower()]
+                        if near_match:
+                            filtered_records.append(rec)
+                    records = filtered_records
 
             return self._add_locations(records)
             
@@ -115,7 +122,7 @@ ORDER BY `timestamp` ASC
         conn = self.connect()
         try:
             cursor = conn.cursor(dictionary=True)
-            if employee_identifier is None:
+            if not employee_identifier:
                 query = """
                     SELECT * FROM `raw` 
                     WHERE DATE(`timestamp`) BETWEEN %s AND %s 
@@ -237,7 +244,7 @@ ORDER BY MIN(t2.`timestamp`)
             cursor.close()
             conn.close()
     
-    def get_latest_entries(self, start_time: Optional[str], end_time: Optional[str], where: str = 'last', limit: int = 10) -> List[Dict]:
+    def get_latest_entries(self, start_time: Optional[str], end_time: Optional[str], where: str = 'last', limit: int = 20) -> List[Dict]:
         """Get latest attendance entries"""
         conn = self.connect()
         try:

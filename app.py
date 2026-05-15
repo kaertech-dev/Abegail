@@ -4,14 +4,13 @@ from werkzeug.utils import secure_filename
 from flask_cors import CORS
 from datetime import datetime, timedelta, date
 import os
-import re
 import csv
 import numpy as np
 import socket
 import traceback
 
 from db_handler import get_db_handler
-from ai_handler import ask_general_question, ask_with_file_parse
+from ai_handler import ask_general_question, ask_with_file_parse, getIntent, getData, getAnalysis, detectAlias
 from quick_responses import learn_from_conversation
 from context_manager import get_context_manager
 from knowledge_base import get_knowledge_base
@@ -20,9 +19,6 @@ from session_manager import get_session_manager
 import base64
 from speaker_recognition.recognizer import recognizer
 from speaker_recognition.models import TrainingRequest, VoiceSample, AudioInput, RecognitionRequest
-
-from mcp_activity_client import handle_activity_query_via_mcp
-from mcp_attendance_client import handle_attendance_query_via_mcp
 
 from camera import VideoCamera, face_logs
 camera = VideoCamera()
@@ -42,10 +38,6 @@ def get_local_ip():
             return s.getsockname()[0]
     except:
         return "127.0.0.1"
-
-# @app.route('/hometest')
-# def new_index():
-#     return render_template('home.html')
 
 @app.route('/')
 def index():
@@ -89,13 +81,16 @@ def download_file(filename):
     else:
         return jsonify({'error': 'File or path does not exist'}), 404
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
+intent = ''
+raw_data = {}
+@app.route('/api/chat/<path:step>', methods=['POST'])
+def chat(step):
     """Main chat endpoint - routes queries to appropriate handlers"""
     try:
         data = request.json
         message = data.get('message', '').strip()
         session_id = data.get('session_id', 'default')
+        # print('SESH:', session_id)
         fileAttached = data.get('fileAttached', '')
         result = None
         
@@ -113,13 +108,6 @@ def chat():
         
         # Ensure session exists
         current_session = session_mgr.get_session_object(session_id) # this retrieves the Session Object, or creates one if it doesn't exist
-
-        name_match = re.search(r'my name is (\w+)', message, re.IGNORECASE)
-        if name_match:
-            current_session.user_name = name_match.group(1)
-            print("User name set to: ", name_match.group(1))
-            # text = "Nice to meet you, " + name_match.group(1) + "! 👋 How can I assist you today? If you have any questions about attendance records or manufacturing activity, feel free to ask!"
-            # result = {'answer': text, 'response_type': 'general'}
         
         # Create user message object
         user_msg = session_mgr.create_message('user', message, session_id)
@@ -127,52 +115,51 @@ def chat():
         # Get context and knowledge
         relevant_context = current_session.get_relevant_context(message)
 
-        # synchronous wrapper for unified mcp client
-        # wrapper handles routing logic
-        # unified client call appropriate server
-        # merge ai handler to sync wrapper
-        # unified_mcp_client = get_sync_wrapper()
-        
-        # Route query to appropriate handler
-        # result = None
-        
-        # Priority 1: Activity Monitoring
-        if 'debug-act' in message:
-            result = handle_activity_query_via_mcp(message)
-        
-        # Priority 2: Attendance
-        elif 'debug-att' in message:
-            result = handle_attendance_query_via_mcp(message)
-
         # Attached file
         if fileAttached or '.csv' in message:
             # either message + file OR message includes filename
             result = ask_with_file_parse(fileAttached, message)
         
         # Process query: Attendance, Activity, Traceability, General
-        if not result:
-            result = ask_general_question(message, relevant_context, current_session.user_name)
+        # if not result:
+        #     result = ask_general_question(message, relevant_context, current_session.user_name)
+        global intent
+        global raw_data
+        message = detectAlias(message)
+        if step == '1':
+            print('intent step')
+            intent = getIntent(message, relevant_context, session_id)
+            bot_msg = session_mgr.create_message('bot', intent, session_id, user_msg['id'])
+            return jsonify(bot_msg)
+        elif step == '2':
+            print('data step')
+            raw_data = getData(message, intent, session_id)
+            bot_msg = session_mgr.create_message('bot', raw_data.get('preformat', ''), session_id, user_msg['id'], response_type=raw_data['response_type'],
+                                                 csv = raw_data.get('csv_file'), with_chart = raw_data.get('with_chart', False))
+            return jsonify(bot_msg)
+        elif step == '3':
+            print('analysis step')
+            result = getAnalysis(message, raw_data, relevant_context)
         
         # Create bot message object
-        csv_filename = result.get('csv_file', '')
-        bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], 
-                                                response_type=result['response_type'], csv = csv_filename, with_chart = result.get('with_chart', False))
-        current_session.update_history(message, result['answer'])
+        bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], response_type=result['response_type'])
+        current_session.update_history(message, raw_data.get('preformat', '') + result['answer'])
 
         # Update context and learning
-        if 'Request timeout' not in result['answer']:
-            if 'debug-att' in message or 'debug-act' in message:
-                message = message[10:]
-            context_mgr.update_history(session_id, message, result['answer'])
-            learn_from_conversation(session_mgr.get_session(session_id))
+        context_mgr.update_history(session_id, message, raw_data.get('preformat', '') + result['answer'])
+        learn_from_conversation(session_mgr.get_session(session_id))
+    
+        # Store in knowledge base
+        _update_knowledge_base(kb, message, raw_data.get('preformat', '') + result['answer'], result['response_type'])
         
-            # Store in knowledge base
-            _update_knowledge_base(kb, message, result['answer'], result['response_type'])
-        
+        intent = ''
+        raw_data = {}
         return jsonify(bot_msg)
         
     except Exception as e:
         traceback.print_exc()
+        intent = ''
+        raw_data = {}
         return jsonify({
             'type': 'bot',
             'message': f"An error occurred: {str(e)}",

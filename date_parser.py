@@ -117,7 +117,7 @@ def extractDate_new(message: str):
     # print('Final', final_dates)
     if len(final_dates) == 0:
         return []
-    return [m.date().isoformat() for m in final_dates]
+    return [m.isoformat() for m in final_dates]
 
 def extractDate(message: str, default='today') -> List[str]:
     # check for time markers
@@ -174,7 +174,7 @@ def extractDate(message: str, default='today') -> List[str]:
 
         # if not month_match:
             # case where month is given before date, e.g. April 6
-        month_check = rf'\s+({month}|{month[:3]})\.?\s*' + date_regex + year_regex
+        month_check = rf'\s+({month}|{month[:3]})(?!\w)\.?\s*' + date_regex + year_regex
         month_match = re.findall(month_check, message, flags=re.IGNORECASE)
         # print(month_match)
         date_idx = 1
