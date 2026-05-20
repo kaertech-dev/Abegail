@@ -68,13 +68,6 @@ class ProductionArguments:
         self.serial = ''
         self.date_time = []
 
-# prodArgs = None
-# def getProdArgs():
-#     global prodArgs
-#     if prodArgs is None:
-#         prodArgs = ProductionArguments()
-#     return prodArgs
-
 _prod_args_instances = {}
 def getProdArgs(session_id) -> ProductionArguments:
     global _prod_args_instances

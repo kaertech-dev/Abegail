@@ -81,7 +81,7 @@ def download_file(filename):
     else:
         return jsonify({'error': 'File or path does not exist'}), 404
 
-intent = ''
+intent = {}
 raw_data = {}
 @app.route('/api/chat/<path:step>', methods=['POST'])
 def chat(step):
@@ -129,7 +129,7 @@ def chat(step):
         if step == '1':
             print('intent step')
             intent = getIntent(message, relevant_context, session_id)
-            bot_msg = session_mgr.create_message('bot', intent, session_id, user_msg['id'])
+            bot_msg = session_mgr.create_message('bot', intent['message'], session_id, user_msg['id'], response_type=intent['response_type'])
             return jsonify(bot_msg)
         elif step == '2':
             print('data step')
@@ -152,13 +152,13 @@ def chat(step):
         # Store in knowledge base
         _update_knowledge_base(kb, message, raw_data.get('preformat', '') + result['answer'], result['response_type'])
         
-        intent = ''
+        intent = {}
         raw_data = {}
         return jsonify(bot_msg)
         
     except Exception as e:
         traceback.print_exc()
-        intent = ''
+        intent = {}
         raw_data = {}
         return jsonify({
             'type': 'bot',

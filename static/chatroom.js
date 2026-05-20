@@ -1427,7 +1427,7 @@ async function New_sendMessage(withTranscript = false) {
     sendButton.disabled = true;
     input.disabled = true;
     updateStatus('Processing...', 'processing');
-    showTypingIndicator('Parsing intent');
+    showTypingIndicator('Analyzing query');
 
     if (withTranscript == true) {
         let full_transcript = document.getElementById("meeting-transcript").innerText;
@@ -1456,11 +1456,9 @@ async function New_sendMessage(withTranscript = false) {
         
         if (data.error) {
             addMessage_plain(data.message || 'An error occurred', false, { ...data, response_type: 'error' });
-            // updateStatus('Error', 'error');
         }
-        else {
-            addMessage_plain(data.message, false, data);
-            // updateStatus('Ready', 'ready');
+        else if (data.response_type != 'general') {
+            // addMessage_plain(data.message, false, data);
             showTypingIndicator('Retrieving data');
         }
         
@@ -1504,7 +1502,7 @@ async function New_sendMessage(withTranscript = false) {
                     }
                 }
             }
-            showTypingIndicator('Getting analysis');
+            showTypingIndicator('Generating analysis');
         }
         
     } catch (error) {

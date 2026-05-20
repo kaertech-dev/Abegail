@@ -25,6 +25,13 @@ from mcp.types import (
     LoggingLevel
 )
 
+departments = ['Top Management',
+            'Manufacturing', 'Quality Regulatory Affairs & EHS',
+            'Business Development', 'HR & Admin',
+            'Supply Chain Management', 'Facilities & Maintenance',
+            'Information Technology', 'Research & Development',
+            'Accounting', 'Finance & Administration']
+
 # ==================== CONFIGURATION ====================
 
 DB_CONFIG = {
@@ -59,7 +66,7 @@ class AttendanceDB:
         conn = self.connect()
         if conn is not None:
             cursor = conn.cursor(dictionary=True)
-            query = " SELECT `employee_num`, `employee_name`, `department` FROM `list`"
+            query = " SELECT `employee_num`, `employee_name`, `department`, `division`, `job_title` FROM `list`"
             cursor.execute(query)
             self.employees = cursor.fetchall()
             cursor.close()
@@ -75,6 +82,40 @@ class AttendanceDB:
             # raise Exception(f"Database connection error: {e}")
             print(f"Database connection error: {e}")
             return None
+    
+    def get_attendance(self, target_date: List[str], identifier: List[str], order: str='ASC'):
+        id_term = ''
+        if identifier:
+            id_list = []
+            # Supports multiple identifiers of different kinds (name, num, department)
+            for id in identifier:
+                if 'ke' in id.lower():
+                    id_list.append(f't1.`employee_num` LIKE "%{id}%"')
+                elif id in departments:
+                    id_list.append(f't2.`department` LIKE "%{id}%"')
+                else:
+                    name_parts = id.lower().replace(',', '').split()
+                    temp = []
+                    for np in name_parts:
+                        temp.append(f't1.`employee_name` LIKE "%{np}%"')
+                    id_list.append(f"( {' AND '.join(temp)} )")
+            if id_list:
+                id_term = 'AND ( ' + ' OR '.join(id_list) + ' )'
+        
+        conn = self.connect()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            query = f""" SELECT t1.*, t2.`department` FROM `raw` t1 LEFT JOIN `list` t2 ON t1.`employee_num`=t2.`employee_num` 
+            WHERE DATE(`timestamp`) BETWEEN '{target_date[0]}' AND '{target_date[-1]}' """ + id_term + f""" ORDER BY `timestamp` {order} """
+            # print('FINAL QUERY:', query)
+            cursor.execute(query)
+            records = cursor.fetchall()
+
+            return self._add_locations(records)
+        
+        finally:
+            cursor.close()
+            conn.close()
     
     def get_records_by_date(self, target_date: date, employee_identifier: str = '') -> List[Dict]:
         """Get attendance records for a specific date"""
