@@ -83,24 +83,24 @@ class AttendanceDB:
             print(f"Database connection error: {e}")
             return None
     
-    def get_attendance(self, target_date: List[str], identifier: List[str], order: str='ASC'):
+    def get_attendance(self, target_date: List[str], identifier: Dict[str, List], order: str='ASC'):
         id_term = ''
         if identifier:
             id_list = []
             # Supports multiple identifiers of different kinds (name, num, department)
-            for id in identifier:
-                if 'ke' in id.lower():
-                    id_list.append(f't1.`employee_num` LIKE "%{id}%"')
-                elif id in departments:
-                    id_list.append(f't2.`department` LIKE "%{id}%"')
-                else:
-                    name_parts = id.lower().replace(',', '').split()
-                    temp = []
-                    for np in name_parts:
-                        temp.append(f't1.`employee_name` LIKE "%{np}%"')
-                    id_list.append(f"( {' AND '.join(temp)} )")
+            for key, values in identifier.items():
+                for id in values:
+                    if key == 'employee_num' or key == 'department':
+                        id_list.append(f't1.`{key}` LIKE "%{id}%"')
+                    elif key == 'employee_name':
+                        name_parts = id.lower().replace(',', '').split()
+                        temp = []
+                        for np in name_parts:
+                            temp.append(f't1.`employee_name` LIKE "%{np}%"')
+                        id_list.append(f"( {' AND '.join(temp)} )")
             if id_list:
                 id_term = 'AND ( ' + ' OR '.join(id_list) + ' )'
+                print('combined:', id_term)
         
         conn = self.connect()
         try:
@@ -113,6 +113,27 @@ class AttendanceDB:
 
             return self._add_locations(records)
         
+        finally:
+            cursor.close()
+            conn.close()
+    
+    def find_person(self, identifiers: Dict[str, List]):
+        # identifiers = {'employee_name':[], 'employee_num':[], 'department':[], 'division':[], 'job_title':[]}
+        filters = ''
+        for key,value in identifiers.items():
+            if value:
+                temp = [f' `{key}` LIKE "%{v}%" ' for v in value]
+                filters += " OR ".join(temp)
+        
+        conn = self.connect()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            query = " SELECT * FROM `list` "
+            if filters:
+                query += "WHERE" + filters
+            cursor.execute(query)
+            records = cursor.fetchall()
+            return records
         finally:
             cursor.close()
             conn.close()

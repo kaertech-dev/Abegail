@@ -43,17 +43,16 @@ class ProductionArguments:
         return to_str
     
     def check(self):
+        # print(self)
         if (self.command == 'get_wip' or self.command == 'rejects' or self.command == 'station_details' or self.command == 'raw_data'):
             if self.schema and self.model and self.po_num and len(self.stationList) > 0:
                 return True
-        # elif (self.command == 'station details' or self.command == 'raw data') and self.schema and self.model and (self.station or self.stationList):
-        #     return True
-        elif (self.command == 'process_flow') or (self.command == 'list_all_PO') or (self.command == 'last_running_PO'):
+        elif (self.command == 'show_process_flow') or (self.command == 'show_purchase_orders') or (self.command == 'last_running_PO'):
             if self.schema and self.model:
                 return True
         elif (self.command == 'serial_query') and self.serial:
             return True
-        elif (self.command == 'active_projects') or (self.command == 'running_models'):
+        elif (self.command == 'show_active_projects') or (self.command == 'running_models'):
             return True
         else:
             return False  
@@ -124,16 +123,16 @@ class ProductionDB:
         elif 'station_details' in command or 'raw_data' in command:
             result = self.getStationDetails(args.schema, args.model, args.po_num, args.stationList, args.date_time)
         
-        elif 'list_all_PO' in command:
+        elif 'show_purchase_orders' in command:
             result = self.listPO(args.schema, args.model)
         
         elif 'last_running_PO' in command:
             result = self.getLatestPO(args.schema, args.model)
 
-        elif 'process_flow' in command:
+        elif 'show_process_flow' in command:
             result = self.getProcessFlow(args.schema, args.model)
         
-        elif 'active_projects' in command:
+        elif 'show_active_projects' in command:
             result = self.getActiveProjects()
         
         elif 'serial_query' in command:
@@ -586,7 +585,8 @@ class ProductionDB:
 
     def getRejects(self, schema: str, model: str, PO_num: str, station_list: list):
         process_flow = self._get_columns(schema, model)
-        all_fails = {}
+        total_failure = {}
+        fail_reasons = {}
         conn = self.connect(schema)
         cursor = conn.cursor(dictionary=True)
         try:
@@ -597,36 +597,43 @@ class ProductionDB:
                 query = " SELECT * FROM " + f" {model}_{station} " + """ WHERE `po_num` LIKE %s AND `status` = 0 AND `serial_num` NOT LIKE "%\\_%" """
                 cursor.execute(query, (PO_num,))
                 records = cursor.fetchall()
-                all_fails[station] = records
+                total_failure[station] = records
+                fail_reasons[station] = []
+                for rec in records:
+                    fr = rec.get('remarks') or rec.get('fail_reason')
+                    fr.replace('Fail:', '')
+                    if fr not in fail_reasons[station]:
+                        fail_reasons[station].append(fr)
+
+                # query = " SELECT DISTINCT `remarks` FROM " + f" {model}_{station} " + """ WHERE `po_num` LIKE %s AND `status` = 0 AND `serial_num` NOT LIKE "%\\_%" """
+                # cursor.execute(query, (PO_num,))
+                # fail_reasons[station] = cursor.fetchall()
             
             formatted = f"## Failed Units in {model.title()} \n\n"
             formatted += f"**Schema:** {schema} \n\n"
             formatted += f"**Model:** {model} \n\n"
             formatted += f"**PO number:** {PO_num} \n\n"
 
-            filename = f"{model}_fail-units.csv"
+            filename = f"{model}_fails.csv"
             output_file = open(CSV_PATH + filename, 'w', newline='')
             writer = csv.DictWriter(output_file, ['serial_num', 'po_num', 'station', 'operator_en', 'shift', 'date_time', 'test_rep', 'remarks'], extrasaction='ignore')
             writer.writeheader()
             
-            for stat, rec in all_fails.items():
-                formatted += f"### {stat.title()}: {len(rec)} unit/s \n\n"
-                if len(rec) == 0:
-                    continue
-                
-                # formatted += f"### {stat.title()}: {len(rec)} unit/s \n\n"
-                for i, entry in enumerate(rec, 1):
+            table = "<tr> <th>PROCESS</th> <th>FAILED</th> <th>REASONS</th> </tr>"
+            for stat, rec in total_failure.items():
+                row = f"<tr> <td><b>{stat.title()}</b></td> <td>{len(rec)}</td> <td>{'\n\n'.join(fail_reasons[stat])}</td> </tr>"
+                table += row
+                for entry in rec:
                     entry.update({'station': stat})
+                    if 'fail_reason' in entry:
+                        entry['remarks'] = entry.pop('fail_reason')
                     entry.pop('status')
                     writer.writerow(entry)
-                    if i <= 10:
-                        formatted += f"{i}. {entry['serial_num']} -- {entry['remarks']} \n\n"
-                
-                if len(rec) > 10:
-                    formatted += f"* Showing 10 of {len(rec)} units * \n\n"
+
+            formatted += "<table>" + table + "</table>"
             
             output_file.close()
-            return {'preformat': formatted, 'raw_records': all_fails, 'csv_file': filename, 'response_type': 'KTS'}
+            return {'preformat': formatted, 'raw_records': total_failure, 'csv_file': filename, 'response_type': 'KTS'}
         
         finally:
             cursor.close()
@@ -699,3 +706,15 @@ def exportCSV(filename: str, data: list|dict):
             writer.writeheader()
             for entry in data.items():
                 writer.writerow(entry)
+
+tmp = {'station_details': 'status and analysis update about the output summary of a model',
+        'raw_data': 'csv file with raw data of station output summary of a model',
+        'show_process_flow': 'list of stations under a certain model stored as table columns',
+        'serial_query': 'look for the model of a unit with the given serial number',
+        'get_wip': 'input and output summary of a work-in-progress model',
+        'last_running_PO': 'most recent purchase order for a model',
+        'rejects': 'quantity of failed units of a given model',
+        'show_purchase_orders': 'list of purchase orders for a model',
+        'show_active_projects': 'list of active projects',
+        'running_models': 'list of running models',
+        'none_applicable': 'query outside of scope'}

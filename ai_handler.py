@@ -33,10 +33,6 @@ dept_alias = {'Quality Regulatory Affairs & EHS': ['QA', 'Quality Affairs'],
              'Research & Development': ['Research', 'R&D'],
              'Finance & Administration': ['Finance', 'Budgeting']}
 
-def _get_model_name():
-    from config import MODEL_NAME
-    return MODEL_NAME
-
 def handler_deepseek(prompt: str, model_name: str = DEFAULT_MODEL, transparent=False):
     # MODEL_NAME = _get_model_name()
     try:
@@ -62,10 +58,10 @@ def handler_deepseek(prompt: str, model_name: str = DEFAULT_MODEL, transparent=F
         if process.returncode != 0:
             return "Sorry, there was an error."
 
-        # output_txt = stdout.strip()
-        # if transparent:
-        #     print('REASONING:', output_txt)
-        return clean_response(stdout.strip()) if stdout.strip() else "No response generated."
+        output_txt = stdout.strip()
+        if transparent:
+            print('REASONING:', output_txt)
+        return clean_response(output_txt) if output_txt else "No response generated."
 
     except subprocess.TimeoutExpired:
         process.kill()
@@ -75,50 +71,6 @@ def handler_deepseek(prompt: str, model_name: str = DEFAULT_MODEL, transparent=F
     except Exception as e:
         return f"Error: {str(e)}"
 
-def query_processor(message: str):
-    query_type = None
-    
-    activity_keywords = [
-        'activity', 'activities', 'monitoring',
-        'what are they doing', 'who is doing', 'doing', 'working',
-        'productivity', 'output', 'cycle time', 'target', 'start time', 'end time', 'operator'
-    ]
-
-    for kw in activity_keywords:
-        if kw in message.lower():
-            return 'activity'
-
-    attendance_keywords = [
-        'attendance', 'present', 'absent', 'time in', 'clock in', 'check in', 
-        'who is here', 'who is in', 'in the house', 'in the haus',
-        'department', 'headcount', 'employee', 'employees',
-        'timeout', 'time out', 'clock out'
-    ]
-
-    for kw in attendance_keywords + departments:
-        if kw in message.lower():
-            return 'attendance'
-    
-    if query_type is None:
-        return 'general'
-
-def query_processor_LLM(question: str):
-    att_act_intents = {'individual_attendance': 'employee attendance given the name or employee number which starts with KE followed by 4 numbers',
-                       'department_headcount': 'list present employees under a given department',
-                       'latest_entries': 'get the latest attendance records from the database',
-                       'operator_activity': 'retrieve output, cycle time, and status of production operators',
-                    #    'production_data': 'retrieve general production data such as customer, model, station, target, and operator list',
-                       'none_applicable': 'query outside of scope'}
-    
-    main_prompt = f"""Current message: {question} 
-    List of Intents with Description: {att_act_intents} 
-    Instruction: Determine the intent of the user from the list of options, as well as the given employee name if applicable. Be concise and output only what are needed.
-    Answer format: Tool= Employee= """
-    
-    ai_response = handler_deepseek(main_prompt)
-    print(ai_response)
-    return ai_response
-
 def code_to_name(KE_number: str):
     KE_number = KE_number.replace('ll', 'ke')
     employee_list = attendance_DB().employees
@@ -127,7 +79,7 @@ def code_to_name(KE_number: str):
             return emp['employee_name']
     return KE_number
 
-def activity_handler(question: str, name_call: List[str], date_input: List[str]) -> dict[str, Any]:
+def activity_handler(question: str, param_list: Dict[str, List], date_input: List[str]) -> dict[str, Any]:
     # Find schema and model for filtering
     new_filters = {}
     for schema, models in ktsData.models.items():
@@ -138,11 +90,10 @@ def activity_handler(question: str, name_call: List[str], date_input: List[str])
                     new_filters['model'] = mod
 
     # Set date and other filters for api endpoint
-    if date_input:
-        curr_date = date_input[0]
-    else:
-        curr_date = extractDate(question)[0]
-    # print('API date:', curr_date+filters)
+    if not date_input:
+        date_input = extractDate(question)
+    curr_date = date_input[0]
+    
     api_date = f'?start_date={curr_date}&end_date={curr_date}'
     act_filters = api_date + f"&customer={new_filters.get('schema','')}&model={new_filters.get('model','')}"
     prod_filters = f'?day={curr_date}'
@@ -151,7 +102,7 @@ def activity_handler(question: str, name_call: List[str], date_input: List[str])
     activityService = ActivityAPI()
 
     api_ok = False
-    prod_ok = False
+    prod_ok = (curr_date != date.today().isoformat())
     for fail_ctr in range(3):
         if not api_ok:
             api_response = activityService.get_all_data(act_filters)
@@ -166,7 +117,7 @@ def activity_handler(question: str, name_call: List[str], date_input: List[str])
         if api_ok and prod_ok:
             break
 
-    # If either fetch fails, return with timeout
+    # If Activity API fetch fails, return with timeout
     if not api_ok:
         txt = 'Activity/Productivity API timeout. Please try again.'
         print("API failed after 3 times. Returning...")
@@ -174,7 +125,7 @@ def activity_handler(question: str, name_call: List[str], date_input: List[str])
     
     records = api_response['data']['records']
     util_summary = {}
-    if prod_ok:
+    if prod_ok and (curr_date == date.today().isoformat()):
         util_records = prod_response['data']['records']
 
         # Summarize util% for easier retrieval later
@@ -197,22 +148,24 @@ def activity_handler(question: str, name_call: List[str], date_input: List[str])
         filename = 'activity_' + curr_date + '.csv'
     csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
     writer = csv.DictWriter(csvfile, fieldnames=
-                            ['Customer', 'Model', 'Station', 'Operator', 'Operator Code', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status', 'Util(%)'],
+                            ['Customer', 'Model', 'Station', 'Operator', 'operator_code', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status', 'Util(%)'],
                             extrasaction='ignore')
     writer.writeheader()
 
     # Pre-process the records for easier parsing by Deepseek, and write to csv
-    # filtered_records = []
+    empty_params = [len(value) for value in param_list.values() if len(value) != 0]
+    filtered_records = []
     for r in records:
         # Remove serial numbers
         r.pop('serial_num')
+        # Replace KE numbers in name column for consistency
         if KE_match := re.search(r'(KE|LL)\d{4}', r['Operator'], re.IGNORECASE):
             r['Operator'] = code_to_name(KE_match.group(0))
-        r['Operator Code'] = r.pop('operator_code')
+        # Replace Orange Target with Near Target
         if r['Status'].lower() == 'orange target':
             r['Status'] = 'NEAR TARGET'
-        # Retrieve util%
-        op_flat = flatten(code_to_name(r['Operator Code'].lower()))
+        # Retrieve utilization rate
+        op_flat = flatten(code_to_name(r['operator_code'].lower()))
         util_dict = util_summary.get(op_flat)
         if util_dict:
             key = f'{r['Model'].lower()}_{r['Station'].lower()}'
@@ -221,10 +174,19 @@ def activity_handler(question: str, name_call: List[str], date_input: List[str])
         writer.writerow(r)
         # Rename Target to Target Cycle Time
         r['Target Cycle Time(s)'] = r.pop('Target(s)')
+
+        for par, value, in param_list.items():
+            for val in value:
+                if val.lower() in r[par.title()].lower():
+                    filtered_records.append(r)
+                    break
     
+    if not empty_params:
+        records = filtered_records
+
     # print('Filtered --', filtered_records)
-    instructions = """Include all details for all applicable entries. Lower cycle time than target is good. No target cycle time is automatically on target.
-                Utilization rate is how much time they spent on working across their whole shift. Lower utilization early in the shift is expected."""
+    instructions = """Include all details for all applicable entries. Lower cycle time than target is good. No cycle time or target is 'on target' by default.
+    Utilization rate is how much time they spent working at a given station across their whole shift. Lower utilization early in the shift is expected."""
 
     if len(records) > 0:
         return {'preformat': '', 'csv_file': filename, 'raw_records': records, 
@@ -232,68 +194,42 @@ def activity_handler(question: str, name_call: List[str], date_input: List[str])
     else:
         return {'preformat': "No records in the database for the given date and parameters.", 'raw_records': []}
 
-def attendance_handler(question: str, tool_call: str, name_call: List[str], date_input: List[str]) -> dict[str, Any]:
+def attendance_handler(question: str, tool_call: str, param_list: Dict[str, List], date_input: List[str]) -> dict[str, Any]:
     result = []
     filename = ''
-    emp_id = '' if len(name_call) == 0 else name_call[0]
     chartable = False
     if not date_input:
         date_input = extractDate(question)
 
-    if len(date_input) > 1:
-        result = attendance_DB().get_records_by_range(date_input[0], date_input[1], emp_id)
-        filename = f"{emp_id.replace(' ','')}_attendance_{date_input[0]}_{date_input[1]}.csv"
-        chartable = True
+    names = []
+    for values in param_list.values():
+        for val in values:
+            names.append(val.lower().replace(' ', '-'))
     
-    elif r'employee_info' in tool_call:
-        # possible_employees = []
-        # for emp in attendance_DB().employees:
-        #     if emp['employee_num'] == emp_id:
-        #         possible_employees.append(emp)
-        #         break
-        #     elif flatten(emp_id) == flatten(emp['employee_name']):
-        #         possible_employees.append(emp)
-        #     elif same_name(emp_id, emp['employee_name']):
-        #         possible_employees.append(emp)
-        # result = possible_employees
-        # print(result)
-        # text = '# No employee match in the database.'
-        # if len(possible_employees) > 0:
-        #     text = '# Employee Matches \n\n'
-        #     for i, r in enumerate(result, 1):
-        #         text += f"{i}. {r['employee_name']} ({r['employee_num']}) -- {r['department']} \n\n"
-        return {'preformat': '', 'raw_records': attendance_DB().employees}
+    if r'employee_info' in tool_call:
+        result = attendance_DB().find_person(param_list)
+        text = 'No matches found in employee database.'
+        if len(result) > 0:
+            text = '# Employee Matches \n\n'
+            for i, r in enumerate(result, 1):
+                text += f"{i}. {r['employee_name']} ({r['employee_num']}) -- {r['department']} \n"
+                text += f" - {r['job_title']} \n\n"
+        return {'preformat': text, 'raw_records': result}
     
     elif r'attendance' in tool_call:
-        result = attendance_DB().get_attendance(date_input, name_call)
+        print('paramlist', param_list)
+        result = attendance_DB().get_attendance(date_input, param_list)
         # separate csv files for employees and for department?
-        filename = f"{emp_id.replace(' ','')}_attendance_{date_input[0]}.csv"
-
-    elif r'latest_entries' in tool_call:
-        result = attendance_DB().get_latest_entries(None, None)
-        filename = f"latest_attendance_{date_input[0]}.csv"
-            
-    elif r'department_headcount' in tool_call:
-        dept_param = ''
-        for true_name, alias in dept_alias.items():
-            for nick in alias:
-                if nick in question:
-                    dept_param = true_name
-        
-        if not dept_param:
-            found_depts = [dept for dept in departments if dept.lower() in question.lower()]
-            dept_param = 'all' if not found_depts else found_depts[0]
-
-        result = attendance_DB().get_present_employees(date_input[0], datetime.now().time(), dept_param)
-        filename = f"{dept_param}_attendance_{date_input[0]}.csv"
-        text = '# Department Headcount \n\n'
+        filename = f"ATT_{'_'.join(names)}_{'_'.join(date_input)}.csv"
+        if len(date_input) > 1:
+            chartable = True
     
     # print("Records: ", result)
     if len(result) == 0:
         return {'preformat': 'No records in the database for the given date and parameters.', 'raw_records': []}
     
     csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
-    writer = csv.DictWriter(csvfile, fieldnames=['employee_name', 'employee_num', 'department', 'timestamp'], extrasaction='ignore')
+    writer = csv.DictWriter(csvfile, fieldnames=['employee_name', 'employee_num', 'department', 'timestamp', 'device_ip'], extrasaction='ignore')
     writer.writeheader()
 
     text = '# Attendance Records \n\n'
@@ -305,7 +241,9 @@ def attendance_handler(question: str, tool_call: str, name_call: List[str], date
     if len(result) > 10:
         text += f"\n*Showing first 10 of {len(result)} records* \n\n"
 
-    instructions = "Work hours can start between 07:00 AM and 10:00 AM. Work hours can end between 04:00 PM and 07:00 PM."
+    instructions = """Work hours can start between 07:00 and 10:00. Employees must log in BEFORE those times.
+    Work hours can end between 16:00 and 19:00. Employees log out AFTER those times.
+    Some employees from Manufacturing department work from 07:00 until 19:00."""
     return {'preformat': text, 'raw_records': result, 'instructions': instructions, 'csv_file': filename, 'with_chart': chartable}
 
 def kts_handler(question: str, session_id: str):
@@ -316,7 +254,7 @@ def kts_handler(question: str, session_id: str):
     q_alt = question.replace(' ', '')
     # Search query for given schema and model
     for schema, models in ktsData.models.items():
-        if schema in question or schema in q_alt or getProdArgs(session_id).schema == schema:
+        if ' '+schema in question or schema in q_alt or getProdArgs(session_id).schema == schema:
             getProdArgs(session_id).schema = schema
             if not getProdArgs(session_id).model:
                 for mod in models:
@@ -361,15 +299,16 @@ def kts_handler(question: str, session_id: str):
                 getProdArgs(session_id).clear()
                 return {'answer': 'No stations in the database.', 'response_type': 'KTS'}
             
-            process_list.insert(0, 'depanel')
+            if getProdArgs(session_id).command != 'rejects':
+                process_list.insert(0, 'depanel')
 
             # If multiple stations, split them into a list
             inputs = [q.strip(',') for q in question.split()]
             if len(inputs) == 1:
                 inputs = [q.strip() for q in question.split(',')]
             
-            found_proc = [val for val in process_list if (val in question) or (val in inputs)]
-            print(found_proc)
+            found_proc = [val for val in process_list if (' '+val in question) or (val in inputs)]
+            # print(found_proc)
             if found_proc:
                 getProdArgs(session_id).stationList = found_proc
             # elif 'all station' in question.lower() or not found_proc:
@@ -382,7 +321,7 @@ def kts_handler(question: str, session_id: str):
         # print('Execute:', getProdArgs(session_id))
         output = ktsData.execute(getProdArgs(session_id).command, getProdArgs(session_id))
         output.update({'instructions': """Query is already answered by formatted data. Provide a brief summary of the records in 2-3 sentences.
-                       No need to repeat the full data again."""})
+                       No need to repeat the full data again. Comment on the number of units instead."""})
         getProdArgs(session_id).clear()
         return output
         # return {'preformat': text, 'raw_records': result, 'csv_file': filename}
@@ -393,7 +332,6 @@ def kts_handler(question: str, session_id: str):
 
 def ask_general_question(question: str, context: List, session_id: Optional[str]):
     """Query handler with reasoning"""
-    MODEL_NAME = _get_model_name()
 
     KTS_keywords = {'station details': 'status and analysis update about the output summary of a model',
                     'raw data': 'csv file with raw data of station output summary of a model',
@@ -511,7 +449,7 @@ KTS_keywords = {'station_details': 'status and analysis update about the output 
                 'get_wip': 'input and output summary of a work-in-progress model',
                 'last_running_PO': 'most recent purchase order for a model',
                 'rejects': 'quantity of failed units of a given model',
-                'show_process_orders': 'list of purchase orders for a model',
+                'show_purchase_orders': 'list of purchase orders for a model',
                 'show_active_projects': 'list of active projects',
                 'running_models': 'list of running models',
                 'none_applicable': 'query outside of scope'}
@@ -537,10 +475,10 @@ Current query: {question}
 List of Intents with Description: {KTS_keywords | addtl_keywords}
 Instructions:
 1. Determine the intent of the current query from the list of options.
-2. Determine the date or range of dates in the current query. Output them in a Python list in ISO format. Check for implied dates such as 'last 3 weeks'.
-In case of multiple dates, I only need the start and end. If no date, use empty list.
+2. Determine the date or date range of interest from the query. Output in YYYY-MM-DD format inside a Python list.
+For date range, only include the start and end. If no year was given, assume current year. If no date, use empty list. 
 3. Determine the names of people in the query. Output them in a Python list. If no names, use empty list.
-Be concise and output only what are needed.
+Be concise and output only what is needed.
 Answer format: Intent= Date=[] Persons=[]"""
     
     # Determine intent, date, and names of interest
@@ -551,80 +489,105 @@ Answer format: Intent= Date=[] Persons=[]"""
     if get_tool := re.search(r'intent=\s*(\w+)', handler_response):
         intent = get_tool.group(1)
     
+    param_list = []
     # Employee Info Query
-    if 'employee_info' in intent or 'attendance' in intent:
+    if 'employee_info' in intent:
+        param_list = ['employee_name', 'employee_num', 'department', 'division', 'job_title']
+        query_type = 'attendance'
+    elif 'attendance' in intent:
+        param_list = ['employee_name', 'employee_num', 'department']
         query_type = 'attendance'
     # Activity Query
     elif 'operator_activity' in intent:
+        param_list = ['customer', 'model', 'station', 'operator', 'status']
         query_type = 'activity'
     # General
     elif 'none_applicable' in intent or not intent:
         query_type = 'general'
     # KTS Query
     else:
+        param_list = ['customer', 'model', 'station', 'PO_num', 'serial_num']
         query_type = 'KTS'
 
-    return {'message': handler_response, 'tool_call': intent, 'response_type': query_type}
+    return {'message': handler_response, 'tool_call': intent, 'param_list': param_list, 'response_type': query_type}
+
+def testTool(question: str, handler: str, param_list: list):
+    if handler['response_type'] == 'KTS' or handler['response_type'] == 'activity':
+        addtl_context = f"Active customers and models: {ktsData.models}"
+    else:
+        addtl_context = ''
+    
+    param_prompt = f"""User query: {question}
+Tool = {handler['tool_call']}
+{addtl_context}
+Parameters = {param_list}
+Instructions: For every parameter in the list, determine its value or values from the user query. Put all values in a Python list per parameter.
+Include all parameters even if it has no value, in which case put an empty list. Do NOT exclude parameters from the output.
+Output in Python dictionary with the parameters as keys. Use double quotes for the strings.
+Example: {{"customer": ["tagntrac"], "model": ["templogger"], "station": ["progtest", "assembly2"]}}"""
+    param_result = remove_ansi(handler_deepseek(param_prompt))
+    print('PARAM CHECK:', param_result)
+    try:
+        result = json.loads(param_result)
+        print('JSON --', result)
+        return result
+    except:
+        final = {}
+        newreg = re.findall(r'"(\w+)":\s*\[([a-zA-Z0-9,"\s]+)\]', param_result)
+        for nr in newreg:
+            # print('nr:', nr)
+            key = nr[0]
+            values = re.findall(r'"([a-zA-Z0-9\s]+)"', nr[1])
+            final[key] = [val.lower() for val in values]
+        print('REGEX --', final)
+        return final
 
 def getData(question: str, handler: dict, session_id: str) -> dict[str, str]:
     handler_response = {}
     query_type = handler['response_type']
-
     tool_call = handler['tool_call']
-    # param_list = []
-    # if tool_call == 'attendance':
-    #     param_list = ['employee_name', 'employee_num', 'department']
-    # elif tool_call == 'employee_info':
-    #     param_list = ['employee_name', 'employee_num', 'department', 'division', 'job_title']
-    # elif tool_call == 'operator_activity':
-    #     param_list = ['customer', 'model', 'station', 'operator', 'output', 'cycle_time', 'target', 'status']
-    # elif tool_call != 'none_applicable':
-    #     param_list = ['customer', 'model', 'station', 'PO_num', 'serial_number']
+    param_list = handler.get('param_list')
+    date_list = []
 
     # Parse the parameters from the query
-#     param_prompt = f"""User query: {question}
-# Tool = {tool_call}
-# Parameters = {param_list}
-# Instructions: Based on the user query, determine the value for each given parameter enclosed in a Python list. Use empty list if no value instead of skipping the parameter.
-# Output in a Python dictionary format where the parameter name is the key. Use single quotes for the strings.
-# Example: {{'customer': ['tagntrac'], 'model': ['templogger'], 'station': ['progtest', 'assembly2']}}"""
-#     param_result = handler_deepseek(param_prompt)
-#     print('PARAM CHECK:', param_result)
+    params_call = {}
+    if param_list:
+        params_call = testTool(question, handler, param_list)
     
     # Parse the date/range determined by Deepseek
-    date_list = []
     if date := re.search(r'date=\s*\[(.+)\]', handler['message'], re.IGNORECASE):
         date_list = re.findall(r'\d{4}-\d{2}-\d{2}', date.group(1))
     # print('DATE:', date_list)
 
     # Parse the employee name determined by Deepseek
-    name_call = []
-    if get_name := re.search(r'persons=\s*\[(.+)\]\s*(?!date=)', handler['message'], re.IGNORECASE):
-        name_list = re.findall(r"[a-zA-Z0-9\s]+", get_name.group(1), re.IGNORECASE)
-        # print('NAME LIST:', name_list)
-        for name in name_list:
-            # print(name)
-            if get_KE := re.search(r'(?!<\w)(KE|LL)(\d{1,4})', name, re.IGNORECASE):
-                digits = get_KE.group(2)
-                name_call.append('KE' + digits.rjust(4, "0"))
-            elif name.replace(' ', ''):
-                name_call.append(name)
-        
-        print('FINAL NAME:', name_call)
+    # if get_name := re.search(r'persons=\s*\[(.+)\]\s*(?!date=)', handler['message'], re.IGNORECASE):
+    #     name_list = re.findall(r"[a-zA-Z0-9\s]+", get_name.group(1), re.IGNORECASE)
+    #     for name in name_list:
+    #         if get_KE := re.search(r'(?!<\w)(KE|LL)(\d{1,4})', name, re.IGNORECASE):
+    #             digits = get_KE.group(2)
+    #             ke_num = 'KE' + digits.rjust(4, "0")
+    #             if 'employee_num' not in params_call.keys():
+    #                 params_call['employee_num'] = [ke_num]
+    #         elif name.replace(' ', ''):
+    #             # name_call.append(name)
+    #             if 'employee_name' not in params_call.keys():
+    #                 params_call['employee_name'] = [name]
 
     print('## ----- DATA STEP ----- ##')
     # Attendance Query
     if query_type == 'attendance':
-        handler_response = attendance_handler(question, tool_call, name_call, date_list)
+        handler_response = attendance_handler(question, tool_call, params_call, date_list)
     # Activity Query
     elif query_type == 'activity':
-        handler_response = activity_handler(question, name_call, date_list)
+        handler_response = activity_handler(question, params_call, date_list)
     # KTS Query
     elif query_type == 'KTS':
         for key in KTS_keywords.keys():
             if key.lower() in tool_call:
                 getProdArgs(session_id).command = key.lower()
                 getProdArgs(session_id).date_time = date_list
+                getProdArgs(session_id).schema = '' if not params_call.get('customer') else params_call.get('customer')[0]
+                getProdArgs(session_id).model = '' if not params_call.get('model') else params_call.get('model')[0]
                 handler_response = kts_handler(question, session_id)
                 break
     # General
@@ -664,10 +627,10 @@ Previous conversations: [{reduced_context}]
 Records: [{handler_response.get('raw_records')}]
 The user query is: [{question}]
 Generated response: [{remove_ansi(result)}]
-Is the generated response accurate and concise? If yes, return only <foobar>. 
-If not, output an alternative response that better addresses the query as if it's the original answer."""
+Is the generated response accurate and concise? If yes, return only <foobar> and nothing else. 
+Otherwise, output an alternative response that better addresses the query as if it's the original answer."""
     new_result = handler_deepseek(checking_prompt, transparent=True)
-    # print('Checking step:', new_result)
+    # print(new_result)
 
     if 'foobar' in new_result:
         final_output = {'answer': remove_ansi(result), 'response_type': handler_response.get('response_type')}
@@ -701,14 +664,15 @@ def ask_with_file_parse(filename: str, question: str):
         parse_filename = re.search(r'([A-Za-z0-9_\-]+.csv)', question, re.IGNORECASE)
         filename = parse_filename.group(1)
     elif filename and not question:
-        question = 'Give a detailed but brief summary of the file.'
+        question = """Summarize the contents of the file in 3-10 sentences depending on the document's original length. 
+    Determine the header names, then randomly select up to 10 datapoints to show as examples."""
     
     list_entries = []
     with open(f'./csv_files/{filename}', 'r') as file:
         for line in csv.DictReader(file):
             list_entries.append(line)
         
-    full_prompt = f"""
+    full_prompt = f"""User Query: {question}
 Instructions:
 Today is {date.today()}.
 Your name is Abigail, an informative and helpful AI assistant of a manufacturing company.
@@ -716,11 +680,10 @@ Answer the user query based on the given contents of a file.
 Be informative, concise, and friendly. Provide examples from the file if necessary.
 
 File contents: {list_entries}
-User Query: {question}
 
 Answer:"""
 
-    result = handler_deepseek(full_prompt)
+    result = remove_ansi(handler_deepseek(full_prompt))
 
     name_parts = filename.replace('.csv', '').split('_')
     try:
@@ -729,13 +692,17 @@ Answer:"""
         if len(name_parts) > 2 and converted_date:
             return {'answer': result, 'response_type': 'chart'}
     except:
-        return {'answer': result, 'response_type': 'general'}
+        return {'answer': result, 'response_type': 'summary'}
 
 def detectAlias(user_query: str):
-    name_bank = {'kokoy': 'ranbill cadayona', 'rick': 'cesar modina', 'pj': 'paul john'}
+    name_bank = {'kokoy': 'ranbill', 'rick': 'cesar', 'pj': 'paul john'}
     for nick, name in name_bank.items():
-        if nick in user_query.lower():
+        if ' '+nick in user_query.lower():
             user_query = user_query.replace(nick, name)
+    for key,val in dept_alias.items():
+        for v in val:
+            if v in user_query:
+                user_query = user_query.replace(v, key)
     return user_query
 
 def flatten(name: str):

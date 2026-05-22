@@ -116,9 +116,10 @@ def chat(step):
         relevant_context = current_session.get_relevant_context(message)
 
         # Attached file
-        if fileAttached or '.csv' in message:
-            # either message + file OR message includes filename
+        if fileAttached:
             result = ask_with_file_parse(fileAttached, message)
+            bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], response_type=result['response_type'])
+            return jsonify(bot_msg)
         
         # Process query: Attendance, Activity, Traceability, General
         # if not result:

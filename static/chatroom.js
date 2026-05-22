@@ -1434,12 +1434,11 @@ async function New_sendMessage(withTranscript = false) {
         message = `Conversation context: ${full_transcript} User Query: ${message}`;
         // console.log('Message sent (WITH transcript)');
     }
-    // else {
-    //     console.log('Message sent (no transcript)');
-    // }
-    
+
+    let next_flag = false;
     try {
-        const response = await fetch('/api/chat/1', {
+        // Analyzing Query Step
+        const response_1 = await fetch('/api/chat/1', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1451,89 +1450,91 @@ async function New_sendMessage(withTranscript = false) {
             })
         });
         
-        const data = await response.json();
+        const data_1 = await response_1.json();
         hideTypingIndicator();
         
-        if (data.error) {
-            addMessage_plain(data.message || 'An error occurred', false, { ...data, response_type: 'error' });
+        if (data_1.error) {
+            addMessage_plain(data_1.message || 'An error occurred', false, { ...data_1, response_type: 'error' });
+            return;
         }
-        else if (data.response_type != 'general') {
-            // addMessage_plain(data.message, false, data);
+
+        if (data_1.response_type === 'chart') {
+            let chartValues = await parseCsv(message);
+            if (!chartValues.data) {
+                console.log("Error creating chart");
+            }
+            else{
+                createChart(chartValues.name, chartValues.data, chartValues.labels);
+            }
+        }
+
+        if (data_1.response_type != 'summary') {
+            // addMessage_plain(data_1.message, false, data_1);
+            next_flag = true;
             showTypingIndicator('Retrieving data');
         }
-        
-    } catch (error) {
-        hideTypingIndicator();
-        addMessage('Sorry, there was an error connecting to the server. Please try again.', false, { response_type: 'error' });
-        updateStatus('Error', 'error');
-        console.error('Error:', error);
-    }
 
-    try {
-        const response = await fetch('/api/chat/2', {
+        if (next_flag == false) {
+            sendButton.disabled = false;
+            input.disabled = false;
+            input.focus();
+            return;
+        };
+
+        const response_2 = await fetch('/api/chat/2', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
                 message: message,
-                session_id: sessionId,
-                fileAttached: filename
+                session_id: sessionId
             })
         });
         
-        const data = await response.json();
+        const data_2 = await response_2.json();
         hideTypingIndicator();
         
-        if (data.error) {
-            addMessage_plain(data.message || 'An error occurred', false, { ...data, response_type: 'error' });
-            // updateStatus('Error', 'error');
-        }
-        else {
-            if (data.message || data.csv) {
-                addMessage_plain(data.message, false, data);
-                if (data.response_type === 'chart') {
-                    let chartValues = await parseCsv(message);
-                    if (!chartValues.data) {
-                        console.log("Error creating chart");
-                    }
-                    else{
-                        createChart(chartValues.name, chartValues.data, chartValues.labels);
-                    }
-                }
-            }
-            showTypingIndicator('Generating analysis');
-        }
-        
-    } catch (error) {
-        hideTypingIndicator();
-        addMessage('Sorry, there was an error connecting to the server. Please try again.', false, { response_type: 'error' });
-        updateStatus('Error', 'error');
-        console.error('Error:', error);
-    }
-
-    try {
-        const response = await fetch('/api/chat/3', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                message: message,
-                session_id: sessionId,
-                fileAttached: filename
-            })
-        });
-        
-        const data = await response.json();
-        hideTypingIndicator();
-        
-        if (data.error) {
-            addMessage(data.message || 'An error occurred', false, { ...data, response_type: 'error' });
+        if (data_2.error) {
+            addMessage_plain(data_2.message || 'An error occurred', false, { ...data_2, response_type: 'error' });
+            next_flag = false;
             updateStatus('Error', 'error');
         }
         else {
-            addMessage(data.message, false, data);
+            if (data_2.message || data_2.csv) {
+                addMessage_plain(data_2.message, false, data_2);
+            }
+            showTypingIndicator('Generating analysis');
+            next_flag = true;
+        }
+
+        if (next_flag == false) {
+            sendButton.disabled = false;
+            input.disabled = false;
+            input.focus();
+            return;
+        };
+
+        const response_3 = await fetch('/api/chat/3', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: message,
+                session_id: sessionId
+            })
+        });
+        
+        const data_3 = await response_3.json();
+        hideTypingIndicator();
+        
+        if (data_3.error) {
+            addMessage(data_3.message || 'An error occurred', false, { ...data_3, response_type: 'error' });
+            updateStatus('Error', 'error');
+        }
+        else {
+            addMessage(data_3.message, false, data_3);
             updateStatus('Ready', 'ready');
         }
         
