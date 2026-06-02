@@ -8,26 +8,25 @@ import asyncio
 import json
 import csv
 import os
+import re
 import requests
 from datetime import datetime, date, time, timedelta
 from typing import Any, List, Dict, Optional
 from html_parser import parse_html_to_json
-from formatter import format_activity_response
-
-# MCP SDK imports
-from mcp.server.models import InitializationOptions
-from mcp.server import NotificationOptions, Server
-from mcp.server.stdio import stdio_server
-from mcp.types import (
-    Resource,
-    Tool,
-    TextContent,
-    ImageContent,
-    EmbeddedResource,
-    LoggingLevel
-)
+import mysql.connector
+from mysql.connector import Error
 
 path_name = './csv_files/'
+
+DB_CONFIG = {
+    'host': '192.168.1.38',
+    'user': 'labeling',
+    'password': 'labeling',
+    'database': '',
+    'autocommit': True,
+    'use_unicode': True,
+    'charset': 'utf8mb4'
+}
 
 def std_name(records: list) -> list:
     for rec in records:
@@ -63,8 +62,8 @@ def format_entry(entry: dict, filter: str) -> str:
 
 # ==================== API CLASS ====================
 
-ACTIVITY_API_URL = os.getenv('ACTIVITY_API_URL', 'http://127.0.0.1/activity/api/operator_today')
-PRODUCTIVITY_API = os.getenv('PRODUCTIVITY_API', 'http://127.0.0.1/productivity/api/operator_today')
+ACTIVITY_API_URL = os.getenv('ACTIVITY_API_URL', 'http://192.168.20.200/activity/api/operator_today')
+PRODUCTIVITY_API = os.getenv('PRODUCTIVITY_API', 'http://192.168.20.200/productivity/api/operator_today')
 
 class ActivityAPI:
     def __init__(self, api_url: Optional[str] = None):
@@ -195,378 +194,64 @@ class ActivityAPI:
             result['raw_response'] = raw_response
         return result
 
-# ==================== MCP SERVER ====================
-
-server = Server('activity-server')
-activityServer = ActivityAPI()
-
-@server.list_tools()
-async def handle_list_tools() -> list[Tool]:
-    """List all available activity tools"""
-    return [
-        Tool(
-            name="fetch_all_activity",
-            description="Get all activity records for a specific date.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "date": {
-                        "type": "string",
-                        "description": "Date in YYYY-MM-DD format (default: today)"
-                    },
-                    "end_date": {
-                        "type": "string",
-                        "description": "Date in YYYY-MM-DD format (None if not date range)"
-                    },
-                    "customer": {
-                        "type": "string",
-                        "description": "Name of customer"
-                    },
-                    "model": {
-                        "type": "string",
-                        "description": "Name of model"
-                    },
-                    "station": {
-                        "type": "string",
-                        "description": "Name of station"
-                    }
-                }
-            }
-        ),
-        Tool(
-            name="fetch_operator_data",
-            description="Get activity records for the specified employee on a specific date or date range.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "date": {
-                        "type": "string",
-                        "description": "Date in YYYY-MM-DD format (default: today)"
-                    },
-                    "end_date": {
-                        "type": "string",
-                        "description": "Date in YYYY-MM-DD format (None if not date range)"
-                    },
-                    "employee_id": {
-                        "type": "string",
-                        "description": "Employee identifer, either a name or employee number"
-                    },
-                    "stats": {
-                        "type": "string",
-                        "description": "Operator-specific parameter being queried"
-                    },
-                    "customer": {
-                        "type": "string",
-                        "description": "Name of customer"
-                    },
-                    "model": {
-                        "type": "string",
-                        "description": "Name of model"
-                    },
-                    "station": {
-                        "type": "string",
-                        "description": "Name of station"
-                    }
-                }
-            }
-        ),
-        Tool(
-            name="fetch_aggregate_data",
-            description="Get activity records for the given customer, model, or station.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "date": {
-                        "type": "string",
-                        "description": "Date in YYYY-MM-DD format (default: today)"
-                    },
-                    "end_date": {
-                        "type": "string",
-                        "description": "Date in YYYY-MM-DD format (None if not date range)"
-                    },
-                    "stats": {
-                        "type": "string",
-                        "description": "Operator-specific parameter being queried"
-                    },
-                    "customer": {
-                        "type": "string",
-                        "description": "Name of customer"
-                    },
-                    "model": {
-                        "type": "string",
-                        "description": "Name of model"
-                    },
-                    "station": {
-                        "type": "string",
-                        "description": "Name of station"
-                    }
-                }
-            }
-        )
-    ]
-
-
-# ==================== TOOL ENDPOINT ====================
-
-@server.call_tool()
-async def tool_handler(name: str, arguments: dict) -> list[TextContent]:
-    try:
-        if name == 'fetch_all_activity':
-            return await handle_fetch_all(arguments)
-        elif name == 'fetch_operator_data':
-            return await handle_operator_data(arguments)
-        elif name == 'fetch_aggregate_data':
-            return await handle_aggregate_data(arguments)
-        else:
-            raise ValueError(f"Unknown tool: {name}")
-        
-    except Exception as e:
-        return [TextContent(type="text", text=f"❌ Error: {str(e)}")]
-
-async def handle_fetch_all(arguments: dict) -> list[TextContent]:
-    start_date = arguments.get('date')
-    end_date = arguments.get('end_date')
-    customer = arguments.get('customer')
-    model = arguments.get('model')
-    station = arguments.get('station')
-
-    # prepare csv file for writing
-    filename = 'activity_summary_' + start_date + '.csv'
-    csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
-    writer = csv.DictWriter(csvfile, fieldnames=['Customer', 'Model', 'Station', 'Operator', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status'], extrasaction='ignore')
-    writer.writeheader()
-
-    text = ''
-    if end_date:
-        api_date = f'?start_date={start_date}&end_date={end_date}'
-        text = filename + f"# Activity Summary from {start_date} to {end_date}\n\n"
-    else:
-        api_date = f'?start_date={start_date}&end_date={start_date}'
-        text = filename + f"# Activity Summary for {start_date}\n\n"
-
-    success = False
-    while not success:
-        result = activityServer.get_all_data(api_date)
-        success = result['success']
-
-    if not result.get('data'):
-        return [TextContent(type="text", text="## No records found.")]
-    records = std_name(result['data']['records'])
-    # text = str(records)
-    # return [TextContent(type="text", text=text)]
-
-    if customer:
-        filtered = [r for r in records if r['Customer'].upper()==customer.upper()]
-        records = filtered
-
-    if model:
-        filtered = [r for r in records if r['Model'].upper()==model.upper()]
-        records = filtered
+class ActivityDB:
+    """Handle attendance database operations"""
     
-    if station:
-        filtered = [r for r in records if r['Station'].upper()==station.upper()]
-        records = filtered
+    def __init__(self):
+        self.config = DB_CONFIG
     
-    model_list = {r['Model'] for r in records}
-    if len(records) == 0:
-        return [TextContent(type="text", text="## No records found.")]
+    def connect(self, schema: str):
+        """Create database connection"""
+        try:
+            self.config['database'] = schema
+            return mysql.connector.connect(**self.config)
+        except Error as e:
+            # raise Exception(f"Database connection error: {e}")
+            print(f"Database connection error: {e}")
+            return None
     
-    text += f"Total activities: {len(records)}\n\n"
-    
-    # probably turn into a table???
-    for curr_model in model_list:
-        text += f"## {curr_model}\n\n"
-        ctr = 1
-        for e in records:
-            if e['Model'] == curr_model:
-                text += f"{ctr}. **{e['Operator']}** ({e['operator_code']}) - {e['Station']}\n\n"
-                text += f"   -  **Start Time:** {e['Start Time']}   **End Time:** {e['End time']}\n\n"
-                text += f"   -  **Cycle Time:** {e['Cycle Time(s)']}s   **Output:** {e['Output']}\n\n"
-                text += f"   -  **Target:**  {e['Target(s)']}s   **Status:** {e['Status']}\n\n"
-                ctr += 1
-                writer.writerow(e)
-    
-    return [TextContent(type="text", text=text)]
+    def qualified_stations(self, operator_id: List[str], station_list: List[str]):
+        conn = self.connect('operators')
 
-# def get_status(cycle_time: str, target: str) -> str:
-#     if cycle_time == '-':
-#         return 'ON TARGET'
-    
-#     if float(cycle_time) <= float(target):
-#         return 'ON TARGET'
-#     elif float(cycle_time) < float(target)*1.1:
-#         return 'ORANGE TARGET'
-#     else:
-#         return 'BELOW TARGET'
+        try:
+            cursor = conn.cursor(dictionary=True)
+            possible_employees = []
+            query = " SELECT * FROM `main` "
+            ids = []
+            for opid in operator_id:
+                if KE_num := re.search(r'(?<!\w)KE\d{1,4}\s*', opid, re.IGNORECASE):
+                    ids.append(f' `operator_en` LIKE "%{KE_num.group(0)}%" ')
+                else:
+                    name_parts = opid.lower().replace(',', '').split()
+                    terms = [f" `employee_name` LIKE '%{np}%' " for np in name_parts]
+                    ids.append('(' + 'AND'.join(terms) + ')')
+            id_term = 'OR'.join(ids)
+            
+            stats = []
+            for station in station_list:
+                station = station.replace('_', ' ').replace('station', '').strip()
+                stats.append(f' `process` LIKE "%{station}%" ')
+            stat_term = 'OR'.join(stats)
 
-async def handle_operator_data(arguments: dict) -> list[TextContent]:
-    start_date = arguments.get('date')
-    end_date = arguments.get('end_date')
-    emp_id = arguments.get('emp_id')
-    stats = arguments.get('stats')
-    customer = arguments.get('customer', '')
-    model = arguments.get('model', '')
-    station = arguments.get('station', '')
+            if ids and stats:
+                query += ' WHERE ' + id_term + ' OR ' + stat_term
+            elif ids:
+                query += ' WHERE ' + id_term
+            elif stats:
+                query += ' WHERE ' + stat_term
 
-    if end_date:
-        api_date = f'?start_date={start_date}&end_date={end_date}'
-    else:
-        api_date = f'?start_date={start_date}&end_date={start_date}'
+            cursor.execute(query)
+            possible_employees.extend(cursor.fetchall())
+            
+            # print(possible_employees)
+            txt = '## No operator match.'
+            if len(possible_employees) > 0:
+                txt = '## Process Qualifications \n\n'
+                for i, pe in enumerate(possible_employees, 1):
+                    txt += f'{i}. **{pe['employee_name']}** ({pe['operator_en']})\n\n{pe['process']}\n\n'
+                    pe['stations_allowed'] = pe.pop('process')
 
-    success = False
-    while not success:
-        result = activityServer.get_all_data(api_date)
-        success = result['success']
-    
-    records = std_name(result['data']['records'])
-
-    # filter the records by employee name/number
-    emp_records = []
-    for r in records:
-        if emp_id.lower() in r['Operator'].lower() or emp_id == r['operator_code']:
-            emp_records.append(r)
-    
-    if len(emp_records) == 0:
-        err_text = f"## No matches for {emp_id.title()} in the Monitoring System.\n\n"
-        return [TextContent(type="text", text=err_text)]
-    records = emp_records
-    
-    # filter the employee records if there was an input customer, model, or station
-    if customer:
-        filtered = [r for r in records if r['Customer'].upper()==customer.upper()]
-        records = filtered
-
-    if model:
-        filtered = [r for r in records if r['Model'].upper()==model.upper()]
-        records = filtered
-    
-    if station:
-        filtered = [r for r in records if r['Station'].upper()==station.upper()]
-        records = filtered
-    
-    if len(records) == 0:
-        err_text = f"## {emp_id.title()} has no such activity reflected in the Monitoring System.\n\n"
-        return [TextContent(type="text", text=err_text)]
-    
-    # set header text
-    text = f"# Activity Summary for {emp_id.title()}\n\n"
-    if end_date:
-        text += f"**Date:** {start_date} to {end_date}\n\n"
-    else:
-        text += f"**Date:** {start_date}\n\n"
-    
-    if stats == 'where':
-        if start_date == date.today().isoformat():
-            text = f"## {emp_id.title()} is currently working at these station/s:\n\n"
-        else:
-            text = f"## {emp_id.title()} was working at these station/s on {start_date}:\n\n"
-
-    for i, entry in enumerate(records, 1):
-        if i == 1 and stats != 'where':
-            text += f"**Operator:** {entry['Operator']} ({entry['operator_code']})\n\n"
-        text += f"{i}. "
-        text += format_entry(entry, stats)
-
-    return [TextContent(type="text", text=text)]
-
-async def handle_aggregate_data(arguments: dict) -> list[TextContent]:
-    start_date = arguments.get('date')
-    end_date = arguments.get('end_date')
-    stats = arguments.get('stats', '')
-    customer = arguments.get('customer', '')
-    model = arguments.get('model', '')
-    station = arguments.get('station', '')
-    
-    if end_date:
-        api_date = f'?start_date={start_date}&end_date={end_date}'
-    else:
-        api_date = f'?start_date={start_date}&end_date={start_date}'
-
-    success = False
-    while not success:
-        result = activityServer.get_all_data(api_date)
-        success = result['success']
-    
-    records = std_name(result['data']['records'])
-
-    if customer:
-        filtered = [r for r in records if r['Customer'].upper()==customer.upper()]
-        records = filtered
-
-    if model:
-        filtered = [r for r in records if r['Model'].upper()==model.upper()]
-        records = filtered
-    
-    if station:
-        filtered = [r for r in records if r['Station'].upper()==station.upper()]
-        records = filtered
-        # text = str(records)
-        # return [TextContent(type="text", text=text)]
-    
-    model_list = {r['Model'].upper() for r in records}
-    station_list = {r['Station'].upper() for r in records if r['Model'].upper()==model.upper()}
-
-    if model and model.upper() not in model_list:
-        # return [TextContent(type="text", text='## No such model in Activity Monitoring.\n\n')]
-        return [TextContent(type="text", text=str(model_list))]
-    
-    if stats == 'list_stn':
-        text = f" # List of Stations for {model.upper()}\n\n"
-        for i, stn in enumerate(station_list,1):
-            text += f"{i}. {stn}\n\n"
-        return [TextContent(type="text", text=text)]
-
-    if stats == 'list_ops':
-        text = " # List of Operators"
-    else:
-        text = f" # Showing {stats.title()}s"
-    
-    if station:
-        text += f" at {station.upper()} station"
-    if model:
-        text += f" on {model.upper()}"
-    text += "\n\n"
-    if end_date:
-        text += f"**Date:** {start_date} to {end_date} "
-    else:
-        text += f"**Date:** {start_date} "
-    text += f"**Count:** {len(records)}\n\n"
-
-    if stats == 'cycle time' or stats == 'target':
-        key = stats.title() + '(s)'
-    elif stats == 'end time':
-        key = stats.capitalize()
-    else:
-        key = stats.title()
-
-    for i, rec in enumerate(records, 1):
-        if stats == 'list_ops':
-            text += f"{i}.  **{rec['Operator']}** ({rec['operator_code']}) - {rec['Model']}\n\n"
-            text += f"   -  {rec['Station']} - **Output:** {rec['Output']} **Status:** {rec['Status']}\n\n"
-        else:
-            text += f"{i}.  **{rec['Operator']}** ({rec['operator_code']}) - {rec['Station']}\n\n"
-            text += f"   -  **{stats.title()}:** {rec[key]} \n\n"
-
-    return [TextContent(type="text", text=text)]
-
-
-# ==================== MAIN ====================
-
-async def main():
-    """Run the MCP server"""
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
-                server_name="activity-server",
-                server_version="1.0.0",
-                capabilities=server.get_capabilities(
-                    notification_options=NotificationOptions(),
-                    experimental_capabilities={}
-                )
-            )
-        )
-
-if __name__ == "__main__":
-    asyncio.run(main())
+            return {'preformat': txt, 'raw_records': possible_employees}
+        finally:
+            cursor.close()
+            conn.close()

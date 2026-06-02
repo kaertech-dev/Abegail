@@ -7,6 +7,7 @@ import os
 import csv
 import numpy as np
 import socket
+import logging
 import traceback
 
 from db_handler import get_db_handler
@@ -17,8 +18,8 @@ from knowledge_base import get_knowledge_base
 from session_manager import get_session_manager
 
 import base64
-from speaker_recognition.recognizer import recognizer
-from speaker_recognition.models import TrainingRequest, VoiceSample, AudioInput, RecognitionRequest
+# from speaker_recognition.recognizer import recognizer
+# from speaker_recognition.models import TrainingRequest, VoiceSample, AudioInput, RecognitionRequest
 
 from camera import VideoCamera, face_logs
 camera = VideoCamera()
@@ -55,7 +56,7 @@ def index():
                 known_faces.append(f"known_faces/{g.name}")
     
     ip_addr = request.remote_addr
-    
+    logging.info('Server started.')
     return render_template('index.html', screenshots=screenshots, known_faces=known_faces)
 
 @app.route('/api/upload', methods=['POST'])
@@ -183,6 +184,10 @@ def _update_knowledge_base(kb, message: str, answer: str, response_type: str):
     
     kb.add_example(message, answer, category=response_type)
 
+@app.route('/api/external', methods=['POST'])
+def process_request():
+    pass
+
 @app.route('/api/clear', methods=['POST'])
 def clear_chat():
     """Clear chat session"""
@@ -305,39 +310,39 @@ def log_speech2text():
                 txt_file.write(transcript)
         return jsonify({"success": True}), 200
     
-    elif 'audioTrain' in request.files:
-        audio_file = request.files['audioTrain']
-        # print("To train: ", audio_file)
-        filename = secure_filename(audio_file.filename)
-        audio_file.save(os.path.join(AUDIO_PATH, filename))
+    # elif 'audioTrain' in request.files:
+    #     audio_file = request.files['audioTrain']
+    #     # print("To train: ", audio_file)
+    #     filename = secure_filename(audio_file.filename)
+    #     audio_file.save(os.path.join(AUDIO_PATH, filename))
 
-        with open(f"voices_trained/{filename}", "rb") as raw_audio:
-            base64_audio = base64.b64encode(raw_audio.read()).decode('utf-8')
+    #     with open(f"voices_trained/{filename}", "rb") as raw_audio:
+    #         base64_audio = base64.b64encode(raw_audio.read()).decode('utf-8')
 
-        name = filename.split('.webm')
-        audio_input = AudioInput(audio_data=base64_audio, sample_rate=16000)
-        samples=[VoiceSample(user=name[0], audio=audio_input)]
-        trainResult = recognizer.train(TrainingRequest(voice_samples=samples))
-        # print(trainResult)
-        audio_input = None
-        base64_audio = None
-        return jsonify({"success": True}), 200
+    #     name = filename.split('.webm')
+    #     audio_input = AudioInput(audio_data=base64_audio, sample_rate=16000)
+    #     samples=[VoiceSample(user=name[0], audio=audio_input)]
+    #     trainResult = recognizer.train(TrainingRequest(voice_samples=samples))
+    #     # print(trainResult)
+    #     audio_input = None
+    #     base64_audio = None
+    #     return jsonify({"success": True}), 200
     
-    elif 'audioRecog' in request.files:
-        audio_file = request.files['audioRecog']
-        # print("To recognize: ", audio_file)
-        filename = secure_filename(audio_file.filename)
-        audio_file.save(os.path.join(AUDIO_PATH, filename))
+    # elif 'audioRecog' in request.files:
+    #     audio_file = request.files['audioRecog']
+    #     # print("To recognize: ", audio_file)
+    #     filename = secure_filename(audio_file.filename)
+    #     audio_file.save(os.path.join(AUDIO_PATH, filename))
 
-        with open(f"voices_trained/{filename}", "rb") as raw_audio:
-            base64_audio = base64.b64encode(raw_audio.read()).decode('utf-8')
+    #     with open(f"voices_trained/{filename}", "rb") as raw_audio:
+    #         base64_audio = base64.b64encode(raw_audio.read()).decode('utf-8')
         
-        audio_input = AudioInput(audio_data=base64_audio, sample_rate=16000)
-        recogResult = recognizer.recognize(RecognitionRequest(audio=audio_input))
-        # print(recogResult)
-        audio_input = None
-        base64_audio = None
-        return jsonify({"success": True, "speakerName": recogResult.user_id, "confidence": recogResult.confidence}), 200
+    #     audio_input = AudioInput(audio_data=base64_audio, sample_rate=16000)
+    #     recogResult = recognizer.recognize(RecognitionRequest(audio=audio_input))
+    #     # print(recogResult)
+    #     audio_input = None
+    #     base64_audio = None
+    #     return jsonify({"success": True, "speakerName": recogResult.user_id, "confidence": recogResult.confidence}), 200
 
     else:
         return jsonify({"success": False, "message": "Request body must be JSON."}), 400
@@ -410,20 +415,20 @@ def print_startup_banner():
 {'='*70}
 """)
     
-def load_voice_embeddings():
-    recognizer._reference_embeddings = {}
-    with os.scandir('./embeddings') as fileIter:
-        for file in fileIter:
-            user_id = file.name.split('_')[0]
+# def load_voice_embeddings():
+#     recognizer._reference_embeddings = {}
+#     with os.scandir('./embeddings') as fileIter:
+#         for file in fileIter:
+#             user_id = file.name.split('_')[0]
             
-            loaded_data = np.load(file.path, allow_pickle=False)
-            embedding = np.asarray(loaded_data)
+#             loaded_data = np.load(file.path, allow_pickle=False)
+#             embedding = np.asarray(loaded_data)
     
-            recognizer._reference_embeddings[user_id] = embedding
-        recognizer._is_trained = True
-    print("Voice embeddings loaded from cache.")
+#             recognizer._reference_embeddings[user_id] = embedding
+#         recognizer._is_trained = True
+#     print("Voice embeddings loaded from cache.")
 
 if __name__ == '__main__':
     print_startup_banner()
-    load_voice_embeddings()
+    # load_voice_embeddings()
     app.run(debug=False, host='0.0.0.0', port=8080, threaded=True)

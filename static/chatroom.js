@@ -1414,14 +1414,18 @@ async function New_sendMessage(withTranscript = false) {
 
     if (!message && fileInput.value == '') return;
 
+    let final_message = ''
     if (fileInput.value != '') {
         submitFile();
         filename = fileInput.files[0].name;
-        message = `**Uploaded file: ${filename}**\n\n\n` + message;
+        final_message = `**Uploaded file: ${filename}**\n\n\n` + message;
+    }
+    else {
+        final_message = message
     }
     
     const msgId = `msg_${Date.now()}_${Math.random()}`;
-    addMessage(message, true, { id: msgId, timestamp: getCurrentTime() });
+    addMessage(final_message, true, { id: msgId, timestamp: getCurrentTime() });
     input.value = '';
     
     sendButton.disabled = true;
@@ -1473,6 +1477,11 @@ async function New_sendMessage(withTranscript = false) {
             next_flag = true;
             showTypingIndicator('Retrieving data');
         }
+        else {
+            next_flag = false;
+            addMessage_plain(data_1.message, false, data_1);
+            updateStatus('Ready', 'ready');
+        }
 
         if (next_flag == false) {
             sendButton.disabled = false;
@@ -1504,7 +1513,7 @@ async function New_sendMessage(withTranscript = false) {
             if (data_2.message || data_2.csv) {
                 addMessage_plain(data_2.message, false, data_2);
             }
-            showTypingIndicator('Generating analysis');
+            showTypingIndicator('Generating response');
             next_flag = true;
         }
 

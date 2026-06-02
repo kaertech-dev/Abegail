@@ -917,12 +917,14 @@ body {
     color: var(--text-color);
     border: none;
     border-bottom-left-radius: 4px;
+    max-width: 500px;
 }
 
 .user .bubble {
     background: var(--user-bubble);
     color: var(--text-color);
     border-bottom-right-radius: 4px;
+    max-width: 500px;
 }
 
 .bubble.edited {

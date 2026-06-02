@@ -233,10 +233,25 @@ class ProductionDB:
         columns = self._get_columns(schema, model)
         conn = self.connect(schema)
         try:
+            total = {}
             cursor = conn.cursor(dictionary=True)
-            query = " SELECT DISTINCT `po_num`, MAX(`date_time`) as `timestamp` FROM " + f"{model}_{columns[0]}" + " GROUP BY `po_num` ORDER BY `timestamp` DESC "
-            cursor.execute(query)
-            return cursor.fetchall()
+            for col in columns:
+                query = " SELECT DISTINCT `po_num`, MAX(`date_time`) as `timestamp` FROM " + f"{model}_{col}" + " GROUP BY `po_num` ORDER BY `timestamp` DESC "
+                cursor.execute(query)
+                records = cursor.fetchall()
+
+                for rec in records:
+                    # print(rec)
+                    key = rec['po_num']
+                    if key not in total:
+                        total[key] = rec['timestamp']
+                    else:
+                        curr = total[key]
+                        if curr < rec['timestamp']:
+                            total[key] = rec['timestamp']
+            
+            # print('TOTAL:', total)
+            return [{'po_num': po, 'last_activity': tstamp} for po, tstamp in total.items() if po != '']
 
         finally:
             cursor.close()
@@ -455,18 +470,20 @@ class ProductionDB:
                 cursor.execute(query, (po_num,))
                 B_records = cursor.fetchall()
 
-                record_summary[station] = {'A_pass': 0, 'A_fail': len(A_records),
-                                            'B_pass': 0, 'B_fail': len(B_records)}
+                record_summary[station] = {'A_pass': 0, 'A_fail': 0,
+                                           'B_pass': 0, 'B_fail': 0}
                 for rec in A_records:
-                    record_summary[station]['A_pass'] += int(rec['status'])
-                    record_summary[station]['A_fail'] -= int(rec['status'])
-                    if '_' in rec['serial_num']:
-                        record_summary[station]['A_fail'] -= 1
+                    if '_' not in rec['serial_num']:
+                        if int(rec['status']) == 1:
+                            record_summary[station]['A_pass'] += 1
+                        else:
+                            record_summary[station]['A_fail'] += 1
                 for rec in B_records:
-                    record_summary[station]['B_pass'] += int(rec['status'])
-                    record_summary[station]['B_fail'] -= int(rec['status'])
-                    if '_' in rec['serial_num']:
-                        record_summary[station]['B_fail'] -= 1
+                    if '_' not in rec['serial_num']:
+                        if int(rec['status']) == 1:
+                            record_summary[station]['B_pass'] += 1
+                        else:
+                            record_summary[station]['B_fail'] += 1
                 filename = f'{model}_{station}_{'-'.join(date_input)}.csv'
                 exportCSV(filename, A_records + B_records)
                 filename_comp.append(filename)
@@ -474,7 +491,8 @@ class ProductionDB:
 
             result = str_formatter(record_summary, f"Station Details for {schema} {model}")
             record_summary.update({'schema': schema, 'model': model, 'po_num': po_num, 'date': ' to '.join(date_input)})
-            return {'preformat': result, 'raw_records': record_summary, 'csv_file': ' '.join(filename_comp), 'response_type': 'KTS'}
+            instr = " A and B refer to employee shifts, so 'A_pass' means units that successfully passed the station during shift A."
+            return {'preformat': result, 'raw_records': record_summary, 'csv_file': ' '.join(filename_comp), 'instructions': instr, 'response_type': 'KTS'}
         
         except Exception as e:
             print("Error:", e)
@@ -543,9 +561,9 @@ class ProductionDB:
 
         output = f"## List of PO for {customer} \n\n"
         output += f"**Model:** {model} \n\n"
-        output += "<table> <tr> <th>PO Number</th> <th>Last Depanel Date</th> </tr>"
+        output += "<table> <tr> <th>Purchase Order</th> <th>Last Activity</th> </tr>"
         for po in po_list:
-            output += f"<tr> <td>{po['po_num']}</td> <td>{po['timestamp']}</td> </tr>"
+            output += f"<tr> <td>{po['po_num']}</td> <td>{po['last_activity']}</td> </tr>"
         output += "</table>"
 
         # return {'answer': output, 'response_type': 'KTS'}

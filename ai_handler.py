@@ -8,7 +8,7 @@ import spacy
 from datetime import date, datetime, time
 from typing import List, Optional, Dict, Any
 from date_parser import extractDate
-from mcp_activity_server import ActivityAPI
+from mcp_activity_server import ActivityAPI, ActivityDB
 from mcp_attendance_server import attendance_DB
 from kts_data_handler import ProductionDB, getProdArgs
 
@@ -79,31 +79,25 @@ def code_to_name(KE_number: str):
             return emp['employee_name']
     return KE_number
 
-def activity_handler(question: str, param_list: Dict[str, List], date_input: List[str]) -> dict[str, Any]:
-    # Find schema and model for filtering
-    new_filters = {}
-    for schema, models in ktsData.models.items():
-        if schema in question.lower():
-            new_filters['schema'] = schema
-            for mod in models:
-                if mod in question.lower():
-                    new_filters['model'] = mod
+def fetch_actprod(question: str, date_input: List[str]):
+    global activity_records
 
-    # Set date and other filters for api endpoint
+    # Set date filters for api endpoint
     if not date_input:
         date_input = extractDate(question)
     curr_date = date_input[0]
     
-    api_date = f'?start_date={curr_date}&end_date={curr_date}'
-    act_filters = api_date + f"&customer={new_filters.get('schema','')}&model={new_filters.get('model','')}"
+    act_filters = f'?start_date={curr_date}&end_date={curr_date}'
+    # act_filters = api_date + f"&customer={new_filters.get('schema','')}&model={new_filters.get('model','')}"
     prod_filters = f'?day={curr_date}'
 
     # Retrieve records from api
     activityService = ActivityAPI()
+    actDatabase = ActivityDB()
 
     api_ok = False
     prod_ok = (curr_date != date.today().isoformat())
-    for fail_ctr in range(3):
+    for fail_ctr in range(5):
         if not api_ok:
             api_response = activityService.get_all_data(act_filters)
             if api_response['success']:
@@ -119,9 +113,9 @@ def activity_handler(question: str, param_list: Dict[str, List], date_input: Lis
 
     # If Activity API fetch fails, return with timeout
     if not api_ok:
-        txt = 'Activity/Productivity API timeout. Please try again.'
+        activity_records = {}
         print("API failed after 3 times. Returning...")
-        return {'preformat': txt, 'raw_records': txt}
+        return False
     
     records = api_response['data']['records']
     util_summary = {}
@@ -141,20 +135,6 @@ def activity_handler(question: str, param_list: Dict[str, List], date_input: Lis
         
         # print(util_summary)
     
-    # Prepare csv file for writing
-    if new_filters.get('schema'):
-        filename = 'activity_' + new_filters['schema'] + '_' + curr_date + '.csv'
-    else:
-        filename = 'activity_' + curr_date + '.csv'
-    csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
-    writer = csv.DictWriter(csvfile, fieldnames=
-                            ['Customer', 'Model', 'Station', 'Operator', 'operator_code', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status', 'Util(%)'],
-                            extrasaction='ignore')
-    writer.writeheader()
-
-    # Pre-process the records for easier parsing by Deepseek, and write to csv
-    empty_params = [len(value) for value in param_list.values() if len(value) != 0]
-    filtered_records = []
     for r in records:
         # Remove serial numbers
         r.pop('serial_num')
@@ -170,27 +150,53 @@ def activity_handler(question: str, param_list: Dict[str, List], date_input: Lis
         if util_dict:
             key = f'{r['Model'].lower()}_{r['Station'].lower()}'
             r['Util(%)'] = util_dict.get(key)
-        # Write to csv
-        writer.writerow(r)
         # Rename Target to Target Cycle Time
         r['Target Cycle Time(s)'] = r.pop('Target(s)')
-
-        for par, value, in param_list.items():
-            for val in value:
-                if val.lower() in r[par.title()].lower():
-                    filtered_records.append(r)
-                    break
     
-    if not empty_params:
-        records = filtered_records
+    activity_records = {'date': curr_date, 'records': records}
+    print('RECORDS:', len(records))
+    return True
+    
+def activity_handler(tool_call: str, param_list: Dict[str, List]) -> dict[str, Any]:
+    if tool_call == 'allowed_stations':
+        actdb = ActivityDB()
+        # get_op = re.search(r'persons=\s*\[(.+)\]\s*(?!date=)', handler_response)
+        return actdb.qualified_stations(param_list.get('operator', []), param_list.get('station', []))
+
+    curr_date = activity_records.get('date')
+    records = activity_records.get('records')
+    
+    # Prepare csv file for writing
+    if param_list.get('customer'):
+        filename = 'activity_' + param_list['customer'][0] + '_' + curr_date + '.csv'
+    else:
+        filename = 'activity_' + curr_date + '.csv'
+    csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
+    writer = csv.DictWriter(csvfile, fieldnames=
+                            ['Customer', 'Model', 'Station', 'Operator', 'operator_code', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status', 'Util(%)'],
+                            extrasaction='ignore')
+    writer.writeheader()
+    writer.writerows(records)
+
+    # Pre-process the records for easier parsing by Deepseek, and write to csv
+    # empty_params = [len(value) for value in param_list.values() if len(value) != 0]
+    # filtered_records = []
+    # for r in records:
+    #     writer.writerow(r)
+    #     for par, value, in param_list.items():
+    #         if r.get(par.title(), '') in value:
+    #             filtered_records.append(r)
+    #             break
+    
+    # if empty_params:
+    #     records = filtered_records
 
     # print('Filtered --', filtered_records)
     instructions = """Include all details for all applicable entries. Lower cycle time than target is good. No cycle time or target is 'on target' by default.
     Utilization rate is how much time they spent working at a given station across their whole shift. Lower utilization early in the shift is expected."""
 
     if len(records) > 0:
-        return {'preformat': '', 'csv_file': filename, 'raw_records': records, 
-                'instructions': instructions}
+        return {'preformat': '', 'csv_file': filename, 'raw_records': records, 'instructions': instructions}
     else:
         return {'preformat': "No records in the database for the given date and parameters.", 'raw_records': []}
 
@@ -447,16 +453,17 @@ KTS_keywords = {'station_details': 'status and analysis update about the output 
                 'show_process_flow': 'list of stations under a certain model stored as table columns',
                 'serial_query': 'look for the model of a unit with the given serial number',
                 'get_wip': 'input and output summary of a work-in-progress model',
-                'last_running_PO': 'most recent purchase order for a model',
+                # 'last_running_PO': 'most recent purchase order for a model',
                 'rejects': 'quantity of failed units of a given model',
                 'show_purchase_orders': 'list of purchase orders for a model',
                 'show_active_projects': 'list of active projects',
-                'running_models': 'list of running models',
+                # 'running_models': 'list of running models',
                 'none_applicable': 'query outside of scope'}
 
 addtl_keywords = {'employee_info': 'return the name, employee number, department, and division of an individual',
                   'attendance': 'retrieve daily attendance logs for a person or department',
-                  'operator_activity': 'productivity details such as assigned station, output, cycle time versus target, and utilization rate of an operator'}
+                  'operator_activity': 'productivity details of operators such as station, output, cycle time, target time, and utilization rate',
+                  'allowed_stations': 'list of stations that an employee is qualified to operate'}
 
 def getIntent(question: str, context: list, session_id: str) -> str:
     K_serial = re.search(r'K(\d{11})', question) or re.search(r'KLLM(\d{8})', question)
@@ -475,8 +482,8 @@ Current query: {question}
 List of Intents with Description: {KTS_keywords | addtl_keywords}
 Instructions:
 1. Determine the intent of the current query from the list of options.
-2. Determine the date or date range of interest from the query. Output in YYYY-MM-DD format inside a Python list.
-For date range, only include the start and end. If no year was given, assume current year. If no date, use empty list. 
+2. Determine the date (or date range) of interest from the query. Output in YYYY-MM-DD format inside a Python list.
+For date range, only include the start and end. If no year was given, assume current year. If the query does not contain any dates, use empty list. 
 3. Determine the names of people in the query. Output them in a Python list. If no names, use empty list.
 Be concise and output only what is needed.
 Answer format: Intent= Date=[] Persons=[]"""
@@ -495,11 +502,11 @@ Answer format: Intent= Date=[] Persons=[]"""
         param_list = ['employee_name', 'employee_num', 'department', 'division', 'job_title']
         query_type = 'attendance'
     elif 'attendance' in intent:
-        param_list = ['employee_name', 'employee_num', 'department']
+        param_list = ['employee_name', 'employee_num', 'department', 'order']
         query_type = 'attendance'
     # Activity Query
-    elif 'operator_activity' in intent:
-        param_list = ['customer', 'model', 'station', 'operator', 'status']
+    elif 'operator_activity' in intent or 'allowed_stations' in intent:
+        param_list = ['customer', 'model', 'station', 'operator']
         query_type = 'activity'
     # General
     elif 'none_applicable' in intent or not intent:
@@ -511,7 +518,7 @@ Answer format: Intent= Date=[] Persons=[]"""
 
     return {'message': handler_response, 'tool_call': intent, 'param_list': param_list, 'response_type': query_type}
 
-def testTool(question: str, handler: str, param_list: list):
+def get_params(question: str, handler: Dict[str, str], param_list: list):
     if handler['response_type'] == 'KTS' or handler['response_type'] == 'activity':
         addtl_context = f"Active customers and models: {ktsData.models}"
     else:
@@ -521,23 +528,25 @@ def testTool(question: str, handler: str, param_list: list):
 Tool = {handler['tool_call']}
 {addtl_context}
 Parameters = {param_list}
-Instructions: For every parameter in the list, determine its value or values from the user query. Put all values in a Python list per parameter.
+Instructions: For every parameter in the list, determine its value or values from the user query and put them in a Python list.
 Include all parameters even if it has no value, in which case put an empty list. Do NOT exclude parameters from the output.
 Output in Python dictionary with the parameters as keys. Use double quotes for the strings.
 Example: {{"customer": ["tagntrac"], "model": ["templogger"], "station": ["progtest", "assembly2"]}}"""
     param_result = remove_ansi(handler_deepseek(param_prompt))
     print('PARAM CHECK:', param_result)
     try:
-        result = json.loads(param_result)
-        print('JSON --', result)
-        return result
+        sb = param_result.find('{') 
+        eb = param_result.find('}')
+        if sb != -1 and eb != -1:
+            result = json.loads(param_result[sb:eb+1])
+            print('JSON --', result)
+            return result
     except:
         final = {}
         newreg = re.findall(r'"(\w+)":\s*\[([a-zA-Z0-9,"\s]+)\]', param_result)
         for nr in newreg:
-            # print('nr:', nr)
             key = nr[0]
-            values = re.findall(r'"([a-zA-Z0-9\s]+)"', nr[1])
+            values = re.findall(r'"([a-zA-Z0-9\s_]+)"', nr[1])
             final[key] = [val.lower() for val in values]
         print('REGEX --', final)
         return final
@@ -549,29 +558,38 @@ def getData(question: str, handler: dict, session_id: str) -> dict[str, str]:
     param_list = handler.get('param_list')
     date_list = []
 
+    # Parse the date/range determined by Deepseek
+    if date_p := re.search(r'date=\s*\[(.+)\]', handler['message'], re.IGNORECASE):
+        date_list = re.findall(r'\d{4}-\d{2}-\d{2}', date_p.group(1))
+    # print('DATE:', date_list)
+
+    if tool_call == 'operator_activity':
+        success = fetch_actprod(question, date_list)
+        if not success:
+            txt = 'Activity/Productivity API timeout. Please try again.'
+            return {'preformat': txt, 'raw_records': txt, 'response_type': 'activity'}
+
     # Parse the parameters from the query
     params_call = {}
     if param_list:
-        params_call = testTool(question, handler, param_list)
-    
-    # Parse the date/range determined by Deepseek
-    if date := re.search(r'date=\s*\[(.+)\]', handler['message'], re.IGNORECASE):
-        date_list = re.findall(r'\d{4}-\d{2}-\d{2}', date.group(1))
-    # print('DATE:', date_list)
+        params_call = get_params(question, handler, param_list)
 
     # Parse the employee name determined by Deepseek
-    # if get_name := re.search(r'persons=\s*\[(.+)\]\s*(?!date=)', handler['message'], re.IGNORECASE):
-    #     name_list = re.findall(r"[a-zA-Z0-9\s]+", get_name.group(1), re.IGNORECASE)
-    #     for name in name_list:
-    #         if get_KE := re.search(r'(?!<\w)(KE|LL)(\d{1,4})', name, re.IGNORECASE):
-    #             digits = get_KE.group(2)
-    #             ke_num = 'KE' + digits.rjust(4, "0")
-    #             if 'employee_num' not in params_call.keys():
-    #                 params_call['employee_num'] = [ke_num]
-    #         elif name.replace(' ', ''):
-    #             # name_call.append(name)
-    #             if 'employee_name' not in params_call.keys():
-    #                 params_call['employee_name'] = [name]
+    if get_name := re.search(r'persons=\s*\[(.+)\]\s*(?!date=)', handler['message'], re.IGNORECASE):
+        name_list = re.findall(r"[a-zA-Z0-9\s]+", get_name.group(1), re.IGNORECASE)
+        for name in name_list:
+            if get_KE := re.search(r'(?!<\w)(KE|LL)(\d{1,4})', name, re.IGNORECASE):
+                digits = get_KE.group(2)
+                ke_num = 'KE' + digits.rjust(4, "0")
+                if 'employee_num' not in params_call.keys() or not params_call:
+                    params_call['employee_num'] = [ke_num]
+            elif name.replace(' ', ''):
+                # name_call.append(name)
+                if 'operator' in params_call.keys() or not params_call:
+                    if not params_call.get('operator'):
+                        params_call['operator'] = [name]
+                elif not params_call.get('employee_name'):
+                    params_call['employee_name'] = [name]
 
     print('## ----- DATA STEP ----- ##')
     # Attendance Query
@@ -579,15 +597,23 @@ def getData(question: str, handler: dict, session_id: str) -> dict[str, str]:
         handler_response = attendance_handler(question, tool_call, params_call, date_list)
     # Activity Query
     elif query_type == 'activity':
-        handler_response = activity_handler(question, params_call, date_list)
+        handler_response = activity_handler(tool_call, params_call)
     # KTS Query
     elif query_type == 'KTS':
+        # check if customer and/or model in the params
+        # if params_call.get('model'):
+        #     getProdArgs(session_id).model = params_call.get('model')[0]
+        # elif params_call.get('customer'):
+        #     pass
+        # else:
+        #     return {'preformat': 'No given customer or model.', 'response_type': 'KTS'}
+
         for key in KTS_keywords.keys():
             if key.lower() in tool_call:
                 getProdArgs(session_id).command = key.lower()
-                getProdArgs(session_id).date_time = date_list
-                getProdArgs(session_id).schema = '' if not params_call.get('customer') else params_call.get('customer')[0]
-                getProdArgs(session_id).model = '' if not params_call.get('model') else params_call.get('model')[0]
+                getProdArgs(session_id).date_time = [] if date_list == [date.today().isoformat()] else date_list
+                getProdArgs(session_id).schema = '' if not params_call.get('customer') else params_call['customer'][0]
+                getProdArgs(session_id).model = '' if not params_call.get('model') else params_call['model'][0]
                 handler_response = kts_handler(question, session_id)
                 break
     # General
@@ -611,9 +637,10 @@ def getAnalysis(question:str, handler_response: dict, context: list):
     full_prompt = f"""Previous conversations: {reduced_context}
 Today is {wd[today.weekday()]}, {today}.
 Your name is Abigail, an informative and helpful AI assistant of a manufacturing company. Be friendly, conversational, and concise.
-Analyze available contexts to either answer the user's query or summarize. If records are given, use them as primary source of information.
+Analyze available contexts to address the user's query. If records are given, use them as primary source of information.
 Otherwise, include in your response that no records were retrieved then check the previous conversations as alternative source.
 Respond honestly if unsure about the answer.
+Use markdown formatting for better readability.
 
 Records: {handler_response.get('raw_records')}
 {handler_response.get('instructions', '')}
@@ -622,13 +649,13 @@ Current query: {question}
     result = handler_deepseek(full_prompt)
 
     print('## ----- VALIDATION ----- ##')
-    checking_prompt = f"""
+    checking_prompt = f"""Today is {wd[today.weekday()]}, {today}.
 Previous conversations: [{reduced_context}]
 Records: [{handler_response.get('raw_records')}]
 The user query is: [{question}]
 Generated response: [{remove_ansi(result)}]
-Is the generated response accurate and concise? If yes, return only <foobar> and nothing else. 
-Otherwise, output an alternative response that better addresses the query as if it's the original answer."""
+Is the generated response accurate to the available data? If yes, return only <foobar> and nothing else. 
+Otherwise, output a new response that better addresses the query, but do not mention the previous answer to avoid confusion."""
     new_result = handler_deepseek(checking_prompt, transparent=True)
     # print(new_result)
 
@@ -664,35 +691,36 @@ def ask_with_file_parse(filename: str, question: str):
         parse_filename = re.search(r'([A-Za-z0-9_\-]+.csv)', question, re.IGNORECASE)
         filename = parse_filename.group(1)
     elif filename and not question:
-        question = """Summarize the contents of the file in 3-10 sentences depending on the document's original length. 
-    Determine the header names, then randomly select up to 10 datapoints to show as examples."""
+        question = """Summarize the contents of the file in 5-10 sentences. Determine the header names, then randomly select up to 10 datapoints to show as examples."""
     
-    list_entries = []
+    str_file = ''
     with open(f'./csv_files/{filename}', 'r') as file:
-        for line in csv.DictReader(file):
-            list_entries.append(line)
-        
+        for line in file:
+            str_file += line + '\n'
+    
+    print('## ----- CSV READING ----- ##')
     full_prompt = f"""User Query: {question}
 Instructions:
 Today is {date.today()}.
 Your name is Abigail, an informative and helpful AI assistant of a manufacturing company.
-Answer the user query based on the given contents of a file.
-Be informative, concise, and friendly. Provide examples from the file if necessary.
+Analyze the contents of the file to determine patterns and trends. Provide examples if necessary.
+Be informative, concise, and friendly.
 
-File contents: {list_entries}
+File contents: <file start> {str_file} <file end>
 
 Answer:"""
 
     result = remove_ansi(handler_deepseek(full_prompt))
 
-    name_parts = filename.replace('.csv', '').split('_')
-    try:
-        converted_date = date.fromisoformat(name_parts[1])
-        # Check if attendance csv with date range
-        if len(name_parts) > 2 and converted_date:
-            return {'answer': result, 'response_type': 'chart'}
-    except:
-        return {'answer': result, 'response_type': 'summary'}
+    # name_parts = filename.replace('.csv', '').split('_')
+    # try:
+    #     converted_date = date.fromisoformat(name_parts[1])
+    #     # Check if attendance csv with date range
+    #     if len(name_parts) > 2 and converted_date:
+    #         return {'answer': result, 'response_type': 'chart'}
+    # except:
+    #     print('not attendance')
+    return {'answer': result, 'response_type': 'summary'}
 
 def detectAlias(user_query: str):
     name_bank = {'kokoy': 'ranbill', 'rick': 'cesar', 'pj': 'paul john'}
