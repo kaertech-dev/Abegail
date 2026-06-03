@@ -5,6 +5,7 @@ import re
 import csv
 import json
 import spacy
+import logging
 from datetime import date, datetime, time
 from typing import List, Optional, Dict, Any
 from date_parser import extractDate
@@ -481,7 +482,7 @@ Previous conversation: {context}
 Current query: {question}
 List of Intents with Description: {KTS_keywords | addtl_keywords}
 Instructions:
-1. Determine the intent of the current query from the list of options.
+1. Determine the intent of the current query from the list of options. Do not put inside brackets.
 2. Determine the date (or date range) of interest from the query. Output in YYYY-MM-DD format inside a Python list.
 For date range, only include the start and end. If no year was given, assume current year. If the query does not contain any dates, use empty list. 
 3. Determine the names of people in the query. Output them in a Python list. If no names, use empty list.
@@ -491,9 +492,10 @@ Answer format: Intent= Date=[] Persons=[]"""
     # Determine intent, date, and names of interest
     handler_response = handler_deepseek(intent_prompt).lower()
     print('Response:', handler_response)
+    logging.debug('Response: '+str(handler_response))
 
     intent = ''
-    if get_tool := re.search(r'intent=\s*(\w+)', handler_response):
+    if get_tool := re.search(r'intent=\s*\[*(\w+)\]*', handler_response):
         intent = get_tool.group(1)
     
     param_list = []
@@ -534,6 +536,7 @@ Output in Python dictionary with the parameters as keys. Use double quotes for t
 Example: {{"customer": ["tagntrac"], "model": ["templogger"], "station": ["progtest", "assembly2"]}}"""
     param_result = remove_ansi(handler_deepseek(param_prompt))
     print('PARAM CHECK:', param_result)
+    logging.debug('Param Check: '+str(param_result))
     try:
         sb = param_result.find('{') 
         eb = param_result.find('}')
@@ -573,6 +576,7 @@ def getData(question: str, handler: dict, session_id: str) -> dict[str, str]:
     params_call = {}
     if param_list:
         params_call = get_params(question, handler, param_list)
+        logging.debug('Parsed params: '+str(params_call))
 
     # Parse the employee name determined by Deepseek
     if get_name := re.search(r'persons=\s*\[(.+)\]\s*(?!date=)', handler['message'], re.IGNORECASE):
@@ -639,7 +643,7 @@ Today is {wd[today.weekday()]}, {today}.
 Your name is Abigail, an informative and helpful AI assistant of a manufacturing company. Be friendly, conversational, and concise.
 Analyze available contexts to address the user's query. If records are given, use them as primary source of information.
 Otherwise, include in your response that no records were retrieved then check the previous conversations as alternative source.
-Respond honestly if unsure about the answer.
+Respond honestly if unsure about the answer. You are allowed to ask the user for clarification or additional details.
 Use markdown formatting for better readability.
 
 Records: {handler_response.get('raw_records')}
@@ -648,22 +652,38 @@ Current query: {question}
 """
     result = handler_deepseek(full_prompt)
 
-    print('## ----- VALIDATION ----- ##')
-    checking_prompt = f"""Today is {wd[today.weekday()]}, {today}.
+    for j in range(3):
+        print('## ----- VALIDATION ----- ##')
+        checking_prompt = f"""Today is {wd[today.weekday()]}, {today}.
 Previous conversations: [{reduced_context}]
 Records: [{handler_response.get('raw_records')}]
 The user query is: [{question}]
 Generated response: [{remove_ansi(result)}]
-Is the generated response accurate to the available data? If yes, return only <foobar> and nothing else. 
-Otherwise, output a new response that better addresses the query, but do not mention the previous answer to avoid confusion."""
-    new_result = handler_deepseek(checking_prompt, transparent=True)
-    # print(new_result)
+Instruction: Rate the accuracy and conciseness of the generated response.
+If the response meets the criteria, output only <foobar> and nothing else. 
+Otherwise, generate a better response to the user query but do not make comparisons with the previous answer to avoid confusion."""
+        new_result = handler_deepseek(checking_prompt, transparent=True)
+        # print(new_result)
 
-    if 'foobar' in new_result:
-        final_output = {'answer': remove_ansi(result), 'response_type': handler_response.get('response_type')}
-    else:
-        final_output = {'answer': remove_ansi(new_result), 'response_type': handler_response.get('response_type')}
-    
+        if 'foobar' in new_result:
+            final_output = {'answer': remove_ansi(result), 'response_type': handler_response.get('response_type')}
+            return final_output
+        elif j != 2:
+            # final_output = {'answer': remove_ansi(new_result), 'response_type': handler_response.get('response_type')}
+            result = new_result
+            logging.debug(f"Trial {j} -- "+result)
+        else:
+            error_prompt = f"""
+Records: [{handler_response.get('raw_records')}]
+User Query: [{question}]
+Inadequate response: [{remove_ansi(new_result)}]
+You are a reliable AI assistant, but this time you were not able to answer the user's question accurately due to some error.
+Write an apology in 3-5 sentences that explains what went wrong.
+"""
+            result = handler_deepseek(error_prompt)
+            logging.error('## Inadequate response')
+            return {'answer': remove_ansi(result), 'response_type': 'Error'}
+
     # print('Final output:', final_output)
     return final_output
 

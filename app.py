@@ -129,18 +129,21 @@ def chat(step):
         global raw_data
         message = detectAlias(message)
         if step == '1':
-            print('intent step')
+            # print('intent step')
+            logging.info('## Intent Step')
             intent = getIntent(message, relevant_context, session_id)
             bot_msg = session_mgr.create_message('bot', intent['message'], session_id, user_msg['id'], response_type=intent['response_type'])
             return jsonify(bot_msg)
         elif step == '2':
-            print('data step')
+            # print('data step')
+            logging.info('## Data Step')
             raw_data = getData(message, intent, session_id)
             bot_msg = session_mgr.create_message('bot', raw_data.get('preformat', ''), session_id, user_msg['id'], response_type=raw_data['response_type'],
                                                  csv = raw_data.get('csv_file'), with_chart = raw_data.get('with_chart', False))
             return jsonify(bot_msg)
         elif step == '3':
-            print('analysis step')
+            # print('analysis step')
+            logging.info('## Analysis Step')
             result = getAnalysis(message, raw_data, relevant_context)
         
         # Create bot message object
