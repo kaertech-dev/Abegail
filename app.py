@@ -27,9 +27,9 @@ camera = VideoCamera()
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST"]}})
 
-CSV_BASE_PATH = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/csv_files/"
-AUDIO_PATH = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/voices_trained/"
-TRANSCRIPT_PATH = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/speechlogs/"
+CSV_BASE_PATH = "./csv_files/"
+AUDIO_PATH = "./voices_trained/"
+TRANSCRIPT_PATH = "./speechlogs/"
 
 def get_local_ip():
     """Get local IP address"""

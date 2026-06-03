@@ -15,7 +15,7 @@ DB_CONFIG = {
     'charset': 'utf8mb4'
 }
 
-CSV_PATH = "c:/Users/ai/OneDrive/Documents/project_abegail/Abegail/mcp-server-demo/mcp-server-demo/csv_files/"
+CSV_PATH = "./csv_files/"
 
 class ProductionArguments:
     def __init__(self):
