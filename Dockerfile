@@ -11,7 +11,7 @@ COPY . /app
 RUN apt-get update
 
 # Download packages
-RUN apt-get install sudo curl zstd ffmpeg libsm6 libxext6 net-tools iputils-ping ca-certificates gnupg2 -y
+RUN apt-get install sudo curl zstd nano ffmpeg libsm6 libxext6 net-tools iputils-ping ca-certificates gnupg2 -y
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
@@ -30,4 +30,4 @@ ENV ACTIVITY_API_URL=http://192.168.20.200/activity/api/operator_today
 ENV PRODUCTIVITY_API=http://192.168.20.200/productivity/api/operator_today
 
 # Run gunicorn when the container launches
-CMD ["gunicorn","-b","0.0.0.0:8080","--worker-class","gevent","--timeout","200","app:app"]
+CMD ["gunicorn","-b","0.0.0.0:8080","--worker-class","gevent","--timeout","200","app:app","&&","ollama","serve"]

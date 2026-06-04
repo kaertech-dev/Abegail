@@ -152,7 +152,7 @@ def fetch_actprod(question: str, date_input: List[str]):
             key = f'{r['Model'].lower()}_{r['Station'].lower()}'
             r['Util(%)'] = util_dict.get(key)
         # Rename Target to Target Cycle Time
-        r['Target Cycle Time(s)'] = r.pop('Target(s)')
+        # r['Target Cycle Time(s)'] = r.pop('Target(s)')
     
     activity_records = {'date': curr_date, 'records': records}
     print('RECORDS:', len(records))
@@ -173,9 +173,8 @@ def activity_handler(tool_call: str, param_list: Dict[str, List]) -> dict[str, A
     else:
         filename = 'activity_' + curr_date + '.csv'
     csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
-    writer = csv.DictWriter(csvfile, fieldnames=
-                            ['Customer', 'Model', 'Station', 'Operator', 'operator_code', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status', 'Util(%)'],
-                            extrasaction='ignore')
+    headers = [k for k in records[0].keys()]
+    writer = csv.DictWriter(csvfile, fieldnames=headers, extrasaction='ignore')
     writer.writeheader()
     writer.writerows(records)
 
@@ -454,11 +453,11 @@ KTS_keywords = {'station_details': 'status and analysis update about the output 
                 'show_process_flow': 'list of stations under a certain model stored as table columns',
                 'serial_query': 'look for the model of a unit with the given serial number',
                 'get_wip': 'input and output summary of a work-in-progress model',
-                # 'last_running_PO': 'most recent purchase order for a model',
+                'last_running_PO': 'most recent purchase order for a model',
                 'rejects': 'quantity of failed units of a given model',
                 'show_purchase_orders': 'list of purchase orders for a model',
                 'show_active_projects': 'list of active projects',
-                # 'running_models': 'list of running models',
+                'running_models': 'list of running models',
                 'none_applicable': 'query outside of scope'}
 
 addtl_keywords = {'employee_info': 'return the name, employee number, department, and division of an individual',
@@ -521,10 +520,10 @@ Answer format: Intent= Date=[] Persons=[]"""
     return {'message': handler_response, 'tool_call': intent, 'param_list': param_list, 'response_type': query_type}
 
 def get_params(question: str, handler: Dict[str, str], param_list: list):
+    addtl_context = ''
     if handler['response_type'] == 'KTS' or handler['response_type'] == 'activity':
-        addtl_context = f"Active customers and models: {ktsData.models}"
-    else:
-        addtl_context = ''
+        if handler['tool_call'] != 'show_active_projects' and handler['tool_call'] != 'running_models':
+            addtl_context = f"Active customers and models: {ktsData.models}"
     
     param_prompt = f"""User query: {question}
 Tool = {handler['tool_call']}
