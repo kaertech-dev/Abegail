@@ -30,4 +30,4 @@ ENV ACTIVITY_API_URL=http://192.168.20.200/activity/api/operator_today
 ENV PRODUCTIVITY_API=http://192.168.20.200/productivity/api/operator_today
 
 # Run gunicorn when the container launches
-CMD ["ollama","serve","&","sleep","10","&&","gunicorn","-b","0.0.0.0:8080","app:app"]
+CMD ["gunicorn","-b","0.0.0.0:8080","--worker-class","gevent","--timeout","200","app:app"]

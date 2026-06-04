@@ -30,6 +30,14 @@ CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST"]}})
 CSV_BASE_PATH = "./csv_files/"
 AUDIO_PATH = "./voices_trained/"
 TRANSCRIPT_PATH = "./speechlogs/"
+SCREENSHOT_PATH = "./webcam"
+KFACES_PATH = "./known_faces"
+
+def check_dirs():
+    dir_list = ["./csv_files/", "./voices_trained/", "./speechlogs/", "./webcam", "./known_faces"]
+    for dl in dir_list:
+        if not os.path.exists(dl):
+            os.mkdir(dl)
 
 def get_local_ip():
     """Get local IP address"""
@@ -43,14 +51,14 @@ def get_local_ip():
 @app.route('/')
 def index():
     screenshots = []
-    with os.scandir('webcam') as d:
+    with os.scandir(SCREENSHOT_PATH) as d:
         for e in d:
             if e.name[-4:] == '.jpg':
                 screenshots.append(f"webcam/{e.name}")
     screenshots.reverse()
     
     known_faces = []
-    with os.scandir('known_faces') as f:
+    with os.scandir(KFACES_PATH) as f:
         for g in f:
             if g.name[-4:] == '.jpg':
                 known_faces.append(f"known_faces/{g.name}")
@@ -433,5 +441,6 @@ def print_startup_banner():
 
 if __name__ == '__main__':
     print_startup_banner()
+    check_dirs()
     # load_voice_embeddings()
     app.run(debug=False, host='0.0.0.0', port=8080, threaded=True)

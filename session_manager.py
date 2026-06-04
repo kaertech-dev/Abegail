@@ -17,6 +17,10 @@ class SessionObject:
         self.json_buffer = {"full_history": []}
 
         # load original contents of json file
+        if not os.path.exists(self.filename):
+            with open(self.filename, mode='w', encoding='utf-8') as json_file:
+                json.dump({"full_history": []}, json_file, indent=2)
+        
         with open(self.filename, mode='r', encoding='utf-8') as json_file:
             self.json_buffer = json.load(json_file)
             self.short_term = deque(self.json_buffer['full_history'][-5:], maxlen=10)
