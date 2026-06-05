@@ -73,7 +73,7 @@ def getProdArgs(session_id) -> ProductionArguments:
     
     if session_id not in _prod_args_instances:
         _prod_args_instances[session_id] = ProductionArguments()
-        print('Updated:', _prod_args_instances)
+        # print('Updated:', _prod_args_instances)
     
     return _prod_args_instances[session_id]
 
@@ -236,19 +236,22 @@ class ProductionDB:
             total = {}
             cursor = conn.cursor(dictionary=True)
             for col in columns:
-                query = " SELECT DISTINCT `po_num`, MAX(`date_time`) as `timestamp` FROM " + f"{model}_{col}" + " GROUP BY `po_num` ORDER BY `timestamp` DESC "
-                cursor.execute(query)
-                records = cursor.fetchall()
+                try:
+                    query = " SELECT DISTINCT `po_num`, MAX(`date_time`) as `timestamp` FROM " + f"{model}_{col}" + " GROUP BY `po_num` ORDER BY `timestamp` DESC "
+                    cursor.execute(query)
+                    records = cursor.fetchall()
 
-                for rec in records:
-                    # print(rec)
-                    key = rec['po_num']
-                    if key not in total:
-                        total[key] = rec['timestamp']
-                    else:
-                        curr = total[key]
-                        if curr < rec['timestamp']:
+                    for rec in records:
+                        # print(rec)
+                        key = rec['po_num']
+                        if key not in total:
                             total[key] = rec['timestamp']
+                        else:
+                            curr = total[key]
+                            if curr < rec['timestamp']:
+                                total[key] = rec['timestamp']
+                except:
+                    continue
             
             # print('TOTAL:', total)
             return [{'po_num': po, 'last_activity': tstamp} for po, tstamp in total.items() if po != '']
@@ -292,7 +295,10 @@ class ProductionDB:
         model = found['model']
         columns = self._get_columns(schema, model)
         
-        conn = self.connect(schema)
+        try:
+            conn = self.connect(schema)
+        except Exception as e:
+            return {'preformat': str(e), 'response_type': 'Error'}
         try:
             cursor = conn.cursor(dictionary=True)
             unit_history = {}
@@ -315,8 +321,8 @@ class ProductionDB:
                 row = cursor.fetchall()
                 if row:
                     unit_history[station] = row[0]
-                # else:
-                #     break
+                else:
+                    unit_history[station] = {'serial_num':'', 'status':'0', 'date_time':'n/a', 'operator_en':'n/a'}
             
             output = f"## Serial Query: {serial_num} \n\n"
             output += f"**Schema:** {schema} \n\n"
@@ -329,8 +335,10 @@ class ProductionDB:
             return {'preformat': str(e), 'response_type': 'Error'}
         
         finally:
-            cursor.close()
-            conn.close()
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
     def getWIP(self, schema: str, model: str, PO_num: str, station_list: list, date_input: List[str]):
         if len(date_input) == 0:
@@ -344,7 +352,11 @@ class ProductionDB:
             offset = date.fromisoformat(date_input[0]) + timedelta(days=1)
             date_query = f"AND `date_time` < '{offset} 07:00:00' "
         
-        conn = self.connect(schema.lower())
+        try:
+            conn = self.connect(schema)
+        except Exception as e:
+            return {'preformat': str(e), 'response_type': 'Error'}
+        
         try:
             cursor = conn.cursor(dictionary=True)
             columns = self._get_columns(schema, model)
@@ -365,42 +377,46 @@ class ProductionDB:
             prev_col = 'depanel'
 
             for col in columns:
-                table_name = f'{model}_{col}'
-                # retrieve units that passed
-                query = """ SELECT serial_num, po_num, operator_en, shift, date_time, status FROM """ + table_name + """ 
-                WHERE `po_num` LIKE %s
-                AND `serial_num` NOT LIKE '%\\_%'
-                AND `status` = 1
-                """ + date_query
-                cursor.execute(query, (po_input,))
-                out_entries = cursor.fetchall()
-                if col in station_list:
-                    batch_summary[col] = {'out': len(out_entries), 'in': prev_out}
+                try:
+                    table_name = f'{model}_{col}'
+                    # retrieve units that passed
+                    query = """ SELECT serial_num, po_num, operator_en, shift, date_time, status FROM """ + table_name + """ 
+                    WHERE `po_num` LIKE %s
+                    AND `serial_num` NOT LIKE '%\\_%'
+                    AND `status` = 1
+                    """ + date_query
+                    cursor.execute(query, (po_input,))
+                    out_entries = cursor.fetchall()
+                    if col in station_list:
+                        batch_summary[col] = {'out': len(out_entries), 'in': prev_out}
 
-                # retrieve units that failed
-                query = """ SELECT serial_num, po_num, operator_en, shift, date_time, status FROM """ + table_name + """ 
-                WHERE `po_num` LIKE %s
-                AND `serial_num` NOT LIKE '%\\_%'
-                AND `status` = 0
-                """ + date_query
-                cursor.execute(query, (po_input,))
-                fail_entries = cursor.fetchall()
-                if col in station_list:
-                    batch_summary[col].update({'fail': len(fail_entries)})
-                
-                query = " SELECT * FROM " + table_name + " t2 RIGHT JOIN " + f'{model}_{prev_col}' + " t1 ON t1.`serial_num`=t2.`serial_num` "
-                query += f" WHERE t1.`po_num` LIKE %s AND t1.`date_time` < '{offset} 07:00:00' "
-                query += f" AND (NOT t2.`date_time` < '{offset} 07:00:00' OR t2.`serial_num` IS NULL)"
-                if prev_col != 'depanel':
-                    query += f" AND t1.`status` = 1 "
-                
-                cursor.execute(query, (PO_num,))
-                wip_entries = cursor.fetchall()
-                if col in station_list:
-                    batch_summary[col].update({'wip': len(wip_entries)})
+                    # retrieve units that failed
+                    query = """ SELECT serial_num, po_num, operator_en, shift, date_time, status FROM """ + table_name + """ 
+                    WHERE `po_num` LIKE %s
+                    AND `serial_num` NOT LIKE '%\\_%'
+                    AND `status` = 0
+                    """ + date_query
+                    cursor.execute(query, (po_input,))
+                    fail_entries = cursor.fetchall()
+                    if col in station_list:
+                        batch_summary[col].update({'fail': len(fail_entries)})
+                    
+                    query = " SELECT * FROM " + table_name + " t2 RIGHT JOIN " + f'{model}_{prev_col}' + " t1 ON t1.`serial_num`=t2.`serial_num` "
+                    query += f" WHERE t1.`po_num` LIKE %s AND t1.`date_time` < '{offset} 07:00:00' "
+                    query += f" AND (NOT t2.`date_time` < '{offset} 07:00:00' OR t2.`serial_num` IS NULL)"
+                    if prev_col != 'depanel':
+                        query += f" AND t1.`status` = 1 "
+                    
+                    cursor.execute(query, (PO_num,))
+                    wip_entries = cursor.fetchall()
+                    if col in station_list:
+                        batch_summary[col].update({'wip': len(wip_entries)})
 
-                prev_out = len(out_entries)
-                prev_col = col
+                    prev_out = len(out_entries)
+                    prev_col = col
+                except Error as e:
+                    print(e)
+                    continue
 
             csv_data = []
             for col, values in batch_summary.items():
@@ -418,8 +434,10 @@ class ProductionDB:
             return {'preformat': result, 'raw_records': batch_summary, 'csv_file': filename, 'response_type': 'KTS'}
 
         finally:
-            cursor.close()
-            conn.close()
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
     
     def getStationDetails(self, schema: str, model: str, po_num: str, station_list: list, date_input: List[str]):
         if len(date_input) == 0:
@@ -434,7 +452,10 @@ class ProductionDB:
 
         record_summary = {'po_num': po_num, 'date': ' to '.join(date_input)}
         filename_comp = []
-        conn = self.connect(schema)
+        try:
+            conn = self.connect(schema)
+        except Exception as e:
+            return {'preformat': str(e), 'response_type': 'Error'}
         try:
             cursor = conn.cursor(dictionary=True)
             columns = self._get_columns(schema, model)
@@ -500,8 +521,10 @@ class ProductionDB:
             return {'preformat': 'No records found with the given parameters.', 'response_type': 'KTS'}
 
         finally:
-            cursor.close()
-            conn.close()
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
     
     def getRunningModels(self, date_input: List[str]):
         if len(date_input) == 0:
@@ -572,7 +595,10 @@ class ProductionDB:
     def getLatestPO(self, customer: str, model: str):
         columns = self._get_columns(customer, model)
         recent_activity = []
-        conn = self.connect(customer)
+        try:
+            conn = self.connect(customer)
+        except Exception as e:
+            return {'preformat': str(e), 'response_type': 'Error'}
         try:
             cursor = conn.cursor(dictionary=True)
             # get most recent entries per process/station
@@ -605,9 +631,12 @@ class ProductionDB:
         process_flow = self._get_columns(schema, model)
         total_failure = {}
         fail_reasons = {}
-        conn = self.connect(schema)
-        cursor = conn.cursor(dictionary=True)
         try:
+            conn = self.connect(schema)
+        except Exception as e:
+            return {'preformat': str(e), 'response_type': 'Error'}
+        try:
+            cursor = conn.cursor(dictionary=True)
             for station in station_list:
                 if station not in process_flow:
                     return {'preformat': f"Invalid station name {station}"}
@@ -654,8 +683,10 @@ class ProductionDB:
             return {'preformat': formatted, 'raw_records': total_failure, 'csv_file': filename, 'response_type': 'KTS'}
         
         finally:
-            cursor.close()
-            conn.close()
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
 # ======= Helper Functions ======= #
 

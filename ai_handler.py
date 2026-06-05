@@ -503,7 +503,7 @@ Answer format: Intent= Date=[] Persons=[]"""
         param_list = ['employee_name', 'employee_num', 'department', 'division', 'job_title']
         query_type = 'attendance'
     elif 'attendance' in intent:
-        param_list = ['employee_name', 'employee_num', 'department', 'order']
+        param_list = ['department', 'list_order', 'number_of_entries', 'allow_duplicate_entries']
         query_type = 'attendance'
     # Activity Query
     elif 'operator_activity' in intent or 'allowed_stations' in intent:
@@ -531,7 +531,7 @@ Tool: {handler['tool_call']}
 List of parameter names: {param_list}
 Instructions: For each parameter in the list, determine its values from the user query and enclose in a Python list.
 Include all parameters even if it has no value, in which case put an empty list.
-Output in Python dictionary with the parameters as keys. Use double quotes for the strings.
+Use double quotes for the strings. Be concise and output only what is needed.
 Example: {{"customer": ["tagntrac"], "model": ["templogger"], "station": ["progtest", "assembly2"]}}"""
     param_result = remove_ansi(handler_deepseek(param_prompt))
     print('PARAM CHECK:', param_result)

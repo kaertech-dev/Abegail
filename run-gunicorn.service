@@ -5,6 +5,7 @@ After=network.target
 [Service]
 ExecStart=/usr/local/bin/gunicorn -b 0.0.0.0:8080 --worker-class gevent --timeout 200 app:app
 ExecStartPost=/usr/local/bin/ollama serve
+Environment="PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 [Install]
 WantedBy=multi-user.target
