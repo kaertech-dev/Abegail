@@ -152,7 +152,7 @@ def fetch_actprod(question: str, date_input: List[str]):
             key = f'{r['Model'].lower()}_{r['Station'].lower()}'
             r['Util(%)'] = util_dict.get(key)
         # Rename Target to Target Cycle Time
-        # r['Target Cycle Time(s)'] = r.pop('Target(s)')
+        r['Target Cycle Time(s)'] = r.pop('Target(s)')
     
     activity_records = {'date': curr_date, 'records': records}
     print('RECORDS:', len(records))
@@ -481,7 +481,7 @@ Previous conversation: {context}
 Current query: {question}
 List of Intents with Description: {KTS_keywords | addtl_keywords}
 Instructions:
-1. Determine the intent of the current query from the list of options. Do not put inside brackets.
+1. Determine the intent of the current query from the list of options. Do not leave empty. Put 'none_applicable'. Do not put inside brackets.
 2. Determine the date (or date range) of interest from the query. Output in YYYY-MM-DD format inside a Python list.
 For date range, only include the start and end. If no year was given, assume current year. If the query does not contain any dates, use empty list. 
 3. Determine the names of people in the query. Output them in a Python list. If no names, use empty list.
@@ -526,11 +526,11 @@ def get_params(question: str, handler: Dict[str, str], param_list: list):
             addtl_context = f"Active customers and models: {ktsData.models}"
     
     param_prompt = f"""User query: {question}
-Tool = {handler['tool_call']}
+Tool: {handler['tool_call']}
 {addtl_context}
-Parameters = {param_list}
-Instructions: For every parameter in the list, determine its value or values from the user query and put them in a Python list.
-Include all parameters even if it has no value, in which case put an empty list. Do NOT exclude parameters from the output.
+List of parameter names: {param_list}
+Instructions: For each parameter in the list, determine its values from the user query and enclose in a Python list.
+Include all parameters even if it has no value, in which case put an empty list.
 Output in Python dictionary with the parameters as keys. Use double quotes for the strings.
 Example: {{"customer": ["tagntrac"], "model": ["templogger"], "station": ["progtest", "assembly2"]}}"""
     param_result = remove_ansi(handler_deepseek(param_prompt))
@@ -576,6 +576,8 @@ def getData(question: str, handler: dict, session_id: str) -> dict[str, str]:
     if param_list:
         params_call = get_params(question, handler, param_list)
         logging.debug('Parsed params: '+str(params_call))
+        if type(params_call) != dict:
+            params_call = {}
 
     # Parse the employee name determined by Deepseek
     if get_name := re.search(r'persons=\s*\[(.+)\]\s*(?!date=)', handler['message'], re.IGNORECASE):

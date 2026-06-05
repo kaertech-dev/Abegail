@@ -335,7 +335,7 @@ class ProductionDB:
     def getWIP(self, schema: str, model: str, PO_num: str, station_list: list, date_input: List[str]):
         if len(date_input) == 0:
             date_query = ''
-            offset = date.today()
+            offset = date.today() + timedelta(days=1)
             date_input = [offset.isoformat()]
         elif len(date_input) > 1:
             offset = date.fromisoformat(date_input[1]) + timedelta(days=1)

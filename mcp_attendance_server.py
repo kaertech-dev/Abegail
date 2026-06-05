@@ -77,8 +77,10 @@ class AttendanceDB:
             # Supports multiple identifiers of different kinds (name, num, department)
             for key, values in identifier.items():
                 for id in values:
-                    if key == 'employee_num' or key == 'department':
-                        id_list.append(f't1.`{key}` LIKE "%{id}%"')
+                    if key == 'employee_num':
+                        id_list.append(f't1.`employee_num` LIKE "%{id}%"')
+                    elif key == 'department':
+                        id_list.append(f't2.`department` LIKE "%{id}%"')
                     elif key == 'employee_name':
                         name_parts = id.lower().replace(',', '').split()
                         temp = []

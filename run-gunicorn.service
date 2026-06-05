@@ -1,0 +1,10 @@
+[Unit]
+Description=Launch Abigail and ollama server
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/gunicorn -b 0.0.0.0:8080 --worker-class gevent --timeout 200 app:app
+ExecStartPost=/usr/local/bin/ollama serve
+
+[Install]
+WantedBy=multi-user.target

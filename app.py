@@ -50,6 +50,8 @@ def get_local_ip():
 
 @app.route('/')
 def index():
+    check_dirs()
+    
     screenshots = []
     with os.scandir(SCREENSHOT_PATH) as d:
         for e in d:
