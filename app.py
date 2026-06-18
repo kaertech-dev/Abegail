@@ -11,7 +11,8 @@ import logging
 import traceback
 
 from db_handler import get_db_handler
-from ai_handler import ask_general_question, ask_with_file_parse, getIntent, getData, getAnalysis, detectAlias
+from ai_handler import ask_with_file_parse, detectAlias
+from ai_handler_2 import loop_agent, checker_agent
 from quick_responses import learn_from_conversation
 from context_manager import get_context_manager
 from knowledge_base import get_knowledge_base
@@ -51,7 +52,7 @@ def get_local_ip():
 @app.route('/')
 def index():
     check_dirs()
-    
+
     screenshots = []
     with os.scandir(SCREENSHOT_PATH) as d:
         for e in d:
@@ -92,8 +93,8 @@ def download_file(filename):
     else:
         return jsonify({'error': 'File or path does not exist'}), 404
 
-intent = {}
-raw_data = {}
+loop_result = {}
+preformat_list = []
 @app.route('/api/chat/<path:step>', methods=['POST'])
 def chat(step):
     """Main chat endpoint - routes queries to appropriate handlers"""
@@ -135,40 +136,47 @@ def chat(step):
         # Process query: Attendance, Activity, Traceability, General
         # if not result:
         #     result = ask_general_question(message, relevant_context, current_session.user_name)
-        global intent
-        global raw_data
+        global loop_result
         message = detectAlias(message)
-        if step == '1':
-            # print('intent step')
-            logging.info('## Intent Step')
-            intent = getIntent(message, relevant_context, session_id)
-            bot_msg = session_mgr.create_message('bot', intent['message'], session_id, user_msg['id'], response_type=intent['response_type'])
-            return jsonify(bot_msg)
-        elif step == '2':
-            # print('data step')
-            logging.info('## Data Step')
-            raw_data = getData(message, intent, session_id)
-            bot_msg = session_mgr.create_message('bot', raw_data.get('preformat', ''), session_id, user_msg['id'], response_type=raw_data['response_type'],
+        # if step == '1':
+        #     print('## Intent Step')
+        #     intent = getIntent(message, relevant_context, session_id)
+        #     bot_msg = session_mgr.create_message('bot', intent['tool_queue'], session_id, user_msg['id'], response_type=intent['response_type'])
+        #     return jsonify(bot_msg)
+        # elif step == '2':
+        #     print('## Data Step')
+        #     raw_data = getData(message, intent, session_id, relevant_context)
+        #     bot_msg = session_mgr.create_message('bot', raw_data.get('preformat', ''), session_id, user_msg['id'], response_type=raw_data['response_type'],
+        #                                          csv = raw_data.get('csv_file'), with_chart = raw_data.get('with_chart', False))
+        #     return jsonify(bot_msg)
+        # elif step == '3':
+        #     print('## Analysis Step')
+        #     result = getAnalysis(message, raw_data, relevant_context)
+        if step == '2':
+            loop_result = loop_agent(message, [], session_id)
+            bot_msgs = []
+            for raw_data in loop_result.get('data_list', []):
+                temp = session_mgr.create_message('bot', raw_data.get('preformat', ''), session_id, user_msg['id'],
                                                  csv = raw_data.get('csv_file'), with_chart = raw_data.get('with_chart', False))
-            return jsonify(bot_msg)
+                preformat_list.append(raw_data.get('preformat', ''))
+                bot_msgs.append(temp)
+            return jsonify({'message_list': bot_msgs})
         elif step == '3':
-            # print('analysis step')
-            logging.info('## Analysis Step')
-            result = getAnalysis(message, raw_data, relevant_context)
+            result = checker_agent(message, loop_result.get('data_list'), loop_result.get('initial_analysis'), relevant_context)
         
         # Create bot message object
-        bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], response_type=result['response_type'])
-        current_session.update_history(message, raw_data.get('preformat', '') + result['answer'])
+        # bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], response_type=result['response_type'])
+        bot_msg = session_mgr.create_message('bot', result, session_id, user_msg['id'])
+        current_session.update_history(message, '\n'.join(preformat_list) + result)
 
         # Update context and learning
-        context_mgr.update_history(session_id, message, raw_data.get('preformat', '') + result['answer'])
+        context_mgr.update_history(session_id, message, '\n'.join(preformat_list) + result)
         learn_from_conversation(session_mgr.get_session(session_id))
     
         # Store in knowledge base
-        _update_knowledge_base(kb, message, raw_data.get('preformat', '') + result['answer'], result['response_type'])
+        _update_knowledge_base(kb, message, '\n'.join(preformat_list) + result, '')
         
-        intent = {}
-        raw_data = {}
+        loop_result = {}
         return jsonify(bot_msg)
         
     except Exception as e:

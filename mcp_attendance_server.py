@@ -76,13 +76,25 @@ class AttendanceDB:
             id_list = []
             # Supports multiple identifiers of different kinds (name, num, department)
             for key, values in identifier.items():
-                for id in values:
+                if type(values) == list:
+                    for id in values:
+                        if key == 'employee_num':
+                            id_list.append(f't1.`employee_num` LIKE "%{id}%"')
+                        elif key == 'department':
+                            id_list.append(f't2.`department` LIKE "%{id}%"')
+                        elif key == 'employee_name':
+                            name_parts = id.lower().replace(',', '').split()
+                            temp = []
+                            for np in name_parts:
+                                temp.append(f't1.`employee_name` LIKE "%{np}%"')
+                            id_list.append(f"( {' AND '.join(temp)} )")
+                elif type(values) == str and values != '':
                     if key == 'employee_num':
-                        id_list.append(f't1.`employee_num` LIKE "%{id}%"')
+                        id_list.append(f't1.`employee_num` LIKE "%{values}%"')
                     elif key == 'department':
-                        id_list.append(f't2.`department` LIKE "%{id}%"')
+                        id_list.append(f't2.`department` LIKE "%{values}%"')
                     elif key == 'employee_name':
-                        name_parts = id.lower().replace(',', '').split()
+                        name_parts = values.lower().replace(',', '').split()
                         temp = []
                         for np in name_parts:
                             temp.append(f't1.`employee_name` LIKE "%{np}%"')
@@ -94,7 +106,8 @@ class AttendanceDB:
         conn = self.connect()
         try:
             cursor = conn.cursor(dictionary=True)
-            query = f""" SELECT t1.*, t2.`department` FROM `raw` t1 LEFT JOIN `list` t2 ON t1.`employee_num`=t2.`employee_num` 
+            query = f""" SELECT t1.`employee_num`, t1.`employee_name`, t1.`timestamp`, t1.`device_ip`, t2.`department` FROM `raw` t1
+            LEFT JOIN `list` t2 ON t1.`employee_num`=t2.`employee_num` 
             WHERE DATE(`timestamp`) BETWEEN '{target_date[0]}' AND '{target_date[-1]}' """ + id_term + f""" ORDER BY `timestamp` {order} """
             # print('FINAL QUERY:', query)
             cursor.execute(query)
@@ -106,13 +119,63 @@ class AttendanceDB:
             cursor.close()
             conn.close()
     
+    def dept_rate(self, target_date: List[str], departments: List):
+        
+        if type(departments) == list:
+            dept_list = [f" `department` LIKE '%{dept}%' " for dept in departments]
+        elif type(departments) == str:
+            dept_list = [f" `department` LIKE '%{departments}%' "]
+        
+        if dept_list:
+            dept_term = ' AND ' + 'OR'.join(dept_list)
+        else:
+            dept_term = ''
+        
+        conn = self.connect()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            query = """ SELECT `employee_num`, `employee_name`, `department` FROM `list` """
+            if dept_term:
+                query += " WHERE " + 'OR'.join(dept_list)
+            cursor.execute(query)
+            all_emp = cursor.fetchall()
+
+            query = f""" SELECT t1.`employee_num`, t1.`employee_name`, t2.`department`, MIN(`timestamp`) AS 'first_log', t1.`device_ip` FROM `raw` t1
+            LEFT JOIN `list` t2 ON t1.`employee_num`=t2.`employee_num` 
+            WHERE DATE(`timestamp`) BETWEEN '{target_date[0]}' AND '{target_date[-1]}' """ + dept_term + """ 
+            GROUP BY t1.`employee_num`, t1.`employee_name`, t1.`device_ip` """
+            cursor.execute(query)
+            present = cursor.fetchall()
+
+            # absent = []
+            for emp in all_emp:
+                emp.update({'first_log': 'absent', 'device_ip': 'none'})
+                for p_e in present:
+                    if p_e['employee_num'] == emp['employee_num']:
+                        emp['first_log'] = p_e['first_log']
+                        emp['device_ip'] = p_e['device_ip']
+                # if emp['first_log'] == 'none':
+                #     absent.append(emp['employee_name'])
+            
+            # print(len(all_emp))
+            # print(len(present))
+            return {'raw_records': self._add_locations(all_emp), 'total': len(all_emp), 'present': len(present)}
+
+        finally:
+            cursor.close()
+            conn.close()
+    
     def find_person(self, identifiers: Dict[str, List]):
         # identifiers = {'employee_name':[], 'employee_num':[], 'department':[], 'division':[], 'job_title':[]}
         filters = ''
+        temp = []
         for key,value in identifiers.items():
-            if value:
-                temp = [f' `{key}` LIKE "%{v}%" ' for v in value]
-                filters += " OR ".join(temp)
+            if type(value) == list:
+                temp.extend([f' `{key}` LIKE "%{v}%" ' for v in value])
+                # filters += " OR ".join(temp)
+            elif type(value) == str:
+                temp.append(f' `{key}` LIKE "%{value}%" ')
+        filters += " OR ".join(temp)
         
         conn = self.connect()
         try:

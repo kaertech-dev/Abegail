@@ -1442,53 +1442,53 @@ async function New_sendMessage(withTranscript = false) {
     let next_flag = false;
     try {
         // Analyzing Query Step
-        const response_1 = await fetch('/api/chat/1', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                message: message,
-                session_id: sessionId,
-                fileAttached: filename
-            })
-        });
+        // const response_1 = await fetch('/api/chat/1', {
+        //     method: 'POST',
+        //     headers: {
+        //         'Content-Type': 'application/json',
+        //     },
+        //     body: JSON.stringify({
+        //         message: message,
+        //         session_id: sessionId,
+        //         fileAttached: filename
+        //     })
+        // });
         
-        const data_1 = await response_1.json();
-        hideTypingIndicator();
+        // const data_1 = await response_1.json();
+        // hideTypingIndicator();
         
-        if (data_1.error) {
-            addMessage_plain(data_1.message || 'An error occurred', false, { ...data_1, response_type: 'error' });
-            return;
-        }
+        // if (data_1.error) {
+        //     addMessage_plain(data_1.message || 'An error occurred', false, { ...data_1, response_type: 'error' });
+        //     return;
+        // }
 
-        if (data_1.response_type === 'chart') {
-            let chartValues = await parseCsv(message);
-            if (!chartValues.data) {
-                console.log("Error creating chart");
-            }
-            else{
-                createChart(chartValues.name, chartValues.data, chartValues.labels);
-            }
-        }
+        // if (data_1.response_type === 'chart') {
+        //     let chartValues = await parseCsv(message);
+        //     if (!chartValues.data) {
+        //         console.log("Error creating chart");
+        //     }
+        //     else{
+        //         createChart(chartValues.name, chartValues.data, chartValues.labels);
+        //     }
+        // }
 
-        if (data_1.response_type != 'summary') {
-            // addMessage_plain(data_1.message, false, data_1);
-            next_flag = true;
-            showTypingIndicator('Retrieving data');
-        }
-        else {
-            next_flag = false;
-            addMessage_plain(data_1.message, false, data_1);
-            updateStatus('Ready', 'ready');
-        }
+        // if (data_1.response_type != 'summary') {
+        //     // addMessage_plain(data_1.message, false, data_1);
+        //     next_flag = true;
+        //     showTypingIndicator('Retrieving data');
+        // }
+        // else {
+        //     next_flag = false;
+        //     addMessage_plain(data_1.message, false, data_1);
+        //     updateStatus('Ready', 'ready');
+        // }
 
-        if (next_flag == false) {
-            sendButton.disabled = false;
-            input.disabled = false;
-            input.focus();
-            return;
-        };
+        // if (next_flag == false) {
+        //     sendButton.disabled = false;
+        //     input.disabled = false;
+        //     input.focus();
+        //     return;
+        // };
 
         const response_2 = await fetch('/api/chat/2', {
             method: 'POST',
@@ -1501,7 +1501,7 @@ async function New_sendMessage(withTranscript = false) {
             })
         });
         
-        const data_2 = await response_2.json();
+        const data_2 = await response_2.json(); //array of results
         hideTypingIndicator();
         
         if (data_2.error) {
@@ -1510,8 +1510,10 @@ async function New_sendMessage(withTranscript = false) {
             updateStatus('Error', 'error');
         }
         else {
-            if (data_2.message || data_2.csv) {
-                addMessage_plain(data_2.message, false, data_2);
+            for (let result of data_2.message_list){
+                if (result.message || result.csv) {
+                    addMessage_plain(result.message, false, result);
+                }
             }
             showTypingIndicator('Generating response');
             next_flag = true;

@@ -63,7 +63,9 @@ class SessionObject:
 
             # ref = nlp(message['user'])
             # if processed.similarity(ref) > 0.7:
-            relevant.append({user_key: message['user'], 'response': message['bot']})
+            # relevant.append({user_key: message['user'], 'response': message['bot']})
+            relevant.append({'role': 'user', 'content': message['user']})
+            relevant.append({'role': 'Abigail', 'content': message['bot']})
         relevant.reverse()
         return relevant
 
