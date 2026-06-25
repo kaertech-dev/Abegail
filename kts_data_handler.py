@@ -4,16 +4,7 @@ from datetime import datetime, date, time, timedelta
 from typing import Any, List, Dict, Optional
 import mysql.connector
 from mysql.connector import Error
-
-DB_CONFIG = {
-    'host': '192.168.1.38',
-    'user': 'labeling',
-    'password': 'labeling',
-    'database': '',
-    'autocommit': True,
-    'use_unicode': True,
-    'charset': 'utf8mb4'
-}
+from config import DB_CONFIG
 
 CSV_PATH = "./csv_files/"
 
@@ -306,6 +297,7 @@ class ProductionDB:
         try:
             conn = self.connect(schema)
         except Exception as e:
+            conn.close()
             return {'preformat': str(e), 'response_type': 'Error'}
         try:
             cursor = conn.cursor(dictionary=True)
@@ -370,6 +362,7 @@ class ProductionDB:
         try:
             conn = self.connect(schema)
         except Exception as e:
+            conn.close()
             return {'preformat': str(e), 'response_type': 'Error'}
         
         try:
@@ -470,6 +463,7 @@ class ProductionDB:
         try:
             conn = self.connect(schema)
         except Exception as e:
+            conn.close()
             return {'preformat': str(e), 'response_type': 'Error'}
         try:
             cursor = conn.cursor(dictionary=True)

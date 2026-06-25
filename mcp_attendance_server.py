@@ -11,34 +11,10 @@ from datetime import datetime, date, time, timedelta
 from typing import Any, List, Dict, Optional
 import mysql.connector
 from mysql.connector import Error
+from config import DB_CONFIG, DEVICE_LOCATIONS
+# from dictionaries import departments
 
-departments = ['Top Management',
-            'Manufacturing', 'Quality Regulatory Affairs & EHS',
-            'Business Development', 'HR & Admin',
-            'Supply Chain Management', 'Facilities & Maintenance',
-            'Information Technology', 'Research & Development',
-            'Accounting', 'Finance & Administration']
-
-# ==================== CONFIGURATION ====================
-
-DB_CONFIG = {
-    'host': '192.168.1.38',
-    'user': 'labeling',
-    'password': 'labeling',
-    'database': 'attendance',
-    'autocommit': True,
-    'use_unicode': True,
-    'charset': 'utf8mb4'
-}
-
-DEVICE_LOCATIONS = {
-    '192.168.1.25': 'Building 6',
-    '192.168.1.33': 'Canteen',
-    '192.168.1.37': 'Lobby'
-}
-
-CHECKIN_TYPES = ['time in', 'check in', 'clock in', 'in', 'Time In', 'Check In']
-
+DB_CONFIG['database'] = 'attendance'
 path_name = './csv_files/'
 
 # ==================== DATABASE HANDLER ====================
@@ -64,6 +40,7 @@ class AttendanceDB:
     def connect(self):
         """Create database connection"""
         try:
+            self.config['database'] = 'attendance'
             return mysql.connector.connect(**self.config)
         except Error as e:
             # raise Exception(f"Database connection error: {e}")
@@ -400,7 +377,7 @@ ORDER BY MIN(t2.`timestamp`)
         """Add location info to records"""
         for record in records:
             device_ip = record.get('device_ip', '')
-            record['location'] = DEVICE_LOCATIONS.get(device_ip, device_ip)
+            record['entrance_location'] = DEVICE_LOCATIONS.get(device_ip, device_ip)
         return records
 
 _attendance_db = None
@@ -412,13 +389,6 @@ def attendance_DB():
 
 
 # ==================== UTILITY FUNCTIONS ====================
-departments = ['Top Management',
-               'Manufacturing', 'Quality Regulatory Affairs & EHS',
-               'Business Development', 'HR & Admin',
-               'Supply Chain Management', 'Facilities & Maintenance',
-               'Information Technology', 'Research & Development',
-               'Accounting', 'Finance & Administration']
-
 def parse_date_string(date_str: str) -> Optional[date]:
     """Parse date string to date object"""
     try:

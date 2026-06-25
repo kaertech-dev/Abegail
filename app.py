@@ -5,14 +5,14 @@ from flask_cors import CORS
 from datetime import datetime, timedelta, date
 import os
 import csv
-import numpy as np
+# import numpy as np
 import socket
-import logging
+# import logging
 import traceback
 
 from db_handler import get_db_handler
 from ai_handler import ask_with_file_parse, detectAlias
-from ai_handler_2 import loop_agent, checker_agent
+from ai_handler_2 import checker_agent, two_agent
 from quick_responses import learn_from_conversation
 from context_manager import get_context_manager
 from knowledge_base import get_knowledge_base
@@ -67,7 +67,7 @@ def index():
                 known_faces.append(f"known_faces/{g.name}")
     
     ip_addr = request.remote_addr
-    logging.info('Server started.')
+    # logging.info('Server started.')
     return render_template('index.html', screenshots=screenshots, known_faces=known_faces)
 
 @app.route('/api/upload', methods=['POST'])
@@ -137,6 +137,7 @@ def chat(step):
         # if not result:
         #     result = ask_general_question(message, relevant_context, current_session.user_name)
         global loop_result
+        global preformat_list
         message = detectAlias(message)
         # if step == '1':
         #     print('## Intent Step')
@@ -153,8 +154,12 @@ def chat(step):
         #     print('## Analysis Step')
         #     result = getAnalysis(message, raw_data, relevant_context)
         if step == '2':
-            loop_result = loop_agent(message, [], session_id)
+            loop_result = two_agent(message, relevant_context, session_id)
+            if loop_result.get('error'):
+                current_session.update_history(message, loop_result['error'])
+                return jsonify({'error': loop_result['error']})
             bot_msgs = []
+            print('ORIG ANSWER ---- #\n', loop_result.get('initial_analysis'))
             for raw_data in loop_result.get('data_list', []):
                 temp = session_mgr.create_message('bot', raw_data.get('preformat', ''), session_id, user_msg['id'],
                                                  csv = raw_data.get('csv_file'), with_chart = raw_data.get('with_chart', False))
@@ -166,23 +171,22 @@ def chat(step):
         
         # Create bot message object
         # bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], response_type=result['response_type'])
-        bot_msg = session_mgr.create_message('bot', result, session_id, user_msg['id'])
-        current_session.update_history(message, '\n'.join(preformat_list) + result)
+        bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], response_type=result['response_type'])
+        current_session.update_history(message, '\n'.join(preformat_list) + result['answer'])
 
         # Update context and learning
-        context_mgr.update_history(session_id, message, '\n'.join(preformat_list) + result)
+        context_mgr.update_history(session_id, message, '\n'.join(preformat_list) + result['answer'])
         learn_from_conversation(session_mgr.get_session(session_id))
     
         # Store in knowledge base
-        _update_knowledge_base(kb, message, '\n'.join(preformat_list) + result, '')
+        _update_knowledge_base(kb, message, '\n'.join(preformat_list) + result['answer'], result['response_type'])
         
         loop_result = {}
+        preformat_list = []
         return jsonify(bot_msg)
         
     except Exception as e:
         traceback.print_exc()
-        intent = {}
-        raw_data = {}
         return jsonify({
             'type': 'bot',
             'message': f"An error occurred: {str(e)}",
@@ -276,8 +280,9 @@ def parseCsv(csv_source):
                 tups[date_r] = [time_p]
             else:
                 tups[date_r].append(time_p)
+        
         labels = list(tups.keys())
-        data = list(tups.values())
+        data = [[min(times), max(times)] for times in tups.values()]
         name = records[0]['employee_name']
         
         return jsonify({'success': True, 'labels': labels, 'data': data, 'name': name}), 200
@@ -377,8 +382,8 @@ def print_startup_banner():
 🚀 Abigail AI Assistant - Full System
 {'='*70}
 📡 Access URLs:
-   🏠 Local:   http://127.0.0.1:8080
-   🌐 Network: http://{local_ip}:8080
+   🏠 Local:   http://127.0.0.1:8000
+   🌐 Network: http://{local_ip}:8000
 
 ✨ Features:
    💾 Full Database Exploration
@@ -453,4 +458,4 @@ if __name__ == '__main__':
     print_startup_banner()
     check_dirs()
     # load_voice_embeddings()
-    app.run(debug=False, host='0.0.0.0', port=8080, threaded=True)
+    app.run(debug=False, host='0.0.0.0', port=8000, threaded=True)

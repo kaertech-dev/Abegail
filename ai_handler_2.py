@@ -9,10 +9,10 @@ from datetime import datetime, date
 from mcp_activity_server import ActivityAPI, ActivityDB
 from mcp_attendance_server import attendance_DB
 from kts_data_handler import ProductionDB, getProdArgs
-from dictionaries import departments, kts_tools, level_0_tools, level_1_tools, level_2_tools
+from dictionaries import departments, empdata_tools, opact_tools, kts_tools
 
-# DEFAULT_MODEL = 'deepseek-r1:14b'
-DEFAULT_MODEL = 'deepseek-r1:8b'
+DEFAULT_MODEL = 'deepseek-r1:14b'
+# DEFAULT_MODEL = 'deepseek-r1:8b'
 
 path_name = './csv_files/'
 ktsData = ProductionDB()
@@ -61,31 +61,36 @@ def loop_agent(question: str, prev_convo: list, session_id: str):
     tool_response_list = []
     call_history = []
 
-    tool_list = level_0_tools + level_1_tools + level_2_tools
+    tool_list = empdata_tools + opact_tools + kts_tools
     today = datetime.today()
     wd = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-    for k in range(9):
+    for k in range(7):
         print(f"## -------- Turn {k} -------- ##")
-        q_prompt = f""" 
-Today is {wd[today.weekday()]}, {today}.
-Records: {turn_history}
+        q_prompt = f""" Today is {wd[today.weekday()]}, {today}.
+You are Abigail, a ReAct (Reasoning and Acting) AI agent tasked with answering the following query: {question}
+
+Previous steps and observations: {turn_history}
 List of tools: {tool_list}
 
-You are Abigail, an insightful AI assistant. Your task is to answer the user query based on available records.
-If the records are insufficient, determine the best tools to gather more data.
-Output the dates, if applicable, in YYYY-MM-DD format inside an array. For date range, include only the start and end dates.
-If a parameter has no value based on the query, just leave it blank.
-Put the tool calls inside an array and output in JSON format: {{"tool_calls" : [{{"tool_name":"", "args": {{"parameter":"", "parameter":"", "date":[]}} }} ] }}.
+Instructions:
+1. Analyze the query, reasoning steps, and observations.
+2. Decide carefully on the next action: provide a final answer, or use a tool to get more data.
 
-When you have all relevant data, do not output tool calls anymore.
-Instead, answer the user query in 4-7 sentences with key insights. Output in JSON format: {{"final_answer": ""}}.
+If you have enough data:
+STOP CALLING TOOLS and answer the fucking query in 4-7 sentences, highlighting interesting datapoints with key insights. Output in JSON format: {{"final_answer": ""}}.
 
-User Query: {question}
+If tool call:
+Put the tool call inside an array and output in JSON format: {{"tool_calls" : [{{"tool_name":"", "args": {{"parameter":"", "parameter":""}} }} ] }}.
+Assume parameters are not required. They will be handled externally. For the date parameter, use YYYY-MM-DD format enclosed in array instead.
+
+3. If tool returns an error, check again if your parameters are correct.
+4. Ground your analysis on the data returned by the tools.
 """
-        raw_response = llm_message(q_prompt)
+        raw_response = llm_message(q_prompt, thinking=True)
         turn_history.append({'role': 'Abigail', 'content': raw_response})
         if 'final_answer' in raw_response:
+            raw_response = raw_response.replace('\n', '')
             idx = raw_response.find('final_answer') - 2
             result = json_parser(raw_response[idx:])
             txt_result = result.get('final_answer')
@@ -109,11 +114,14 @@ User Query: {question}
     return {'data_list': tool_response_list, 'initial_analysis': txt_result}
 
 def checker_agent(question:str, records: dict, initial_response: str, prev_convo: list):
+    global response_type
     final = initial_response
+    # if not final:
+    #     final = "No initial response. ONLY GIVE ZERO POINTS because there's nothing to grade. NOT EVEN 1 POINT."
     today = datetime.today()
     wd = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     
-    for j in range(5):
+    for j in range(3):
         print(f'## ----- VALIDATION {j} ----- ##')
         checking_prompt = f"""Today is {wd[today.weekday()]}, {today}.
 Previous conversations: <{prev_convo}>
@@ -121,21 +129,23 @@ Records: <{records}>
 The user query is: <{question}>
 Initial response: <{final}>
 Instruction: 
-You are an adversarial reviewer of LLM responses. Score the initial response from 1-5 for each aspect outlined in this rubric.
-1. Accuracy: 5 points if the response only mentioned data derived from the given sources. 1 point if the response has data without factual basis.
-2. Completeness: 5 points if the response answered the user query completely. 1 point if the response did not cover one or more parts of the query.
-3. Proactivity: 5 points if the response has insights on the given data. 1 point if the response merely echoed datapoints without insights.
-Be concise and only output in this format: {{"accuracy":1-5, "completeness":1-5, "proactivity":1-5,}}"""
+You are a strict adversarial reviewer of LLM responses. Score the initial response from 1-5 for each aspect outlined in this rubric.
+1. Accuracy: 5 points if the response has factual basis. 1 if the response made up datapoints that are not grounded on the given records.
+2. Insights: 5 points if the response interpreted the data and provided key insights. 1 if the response only parroted datapoints without insights.
+3. Proactivity: 5 points if the response offered to help beyond the current scope of the query. 1 if the response did not adequately address the user query.
+Be concise and only output in this format: {{"accuracy":1-5, "insights":1-5, "proactivity":1-5,}}"""
         
         feedback_result = llm_message(checking_prompt)
         print('Feedback --', feedback_result)
         feedback = json_parser(feedback_result)
-        acc = feedback.get('accuracy', 0)
-        rel = feedback.get('completeness', 0)
-        com = feedback.get('proactivity', 0)
+        accuracy = feedback.get('accuracy', 0)
+        insights = feedback.get('insights', 0)
+        proactivity = feedback.get('proactivity', 0)
 
-        if acc >= 3 and rel >= 2 and com >= 3:
-            return final
+        if accuracy >= 4 and insights >= 3 and proactivity >= 2:
+            if type(final) == dict:
+                final = '\n\n'.join(final.values())
+            return {'answer': final, 'response_type': response_type}
         
         improve_prompt = f"""Today is {wd[today.weekday()]}, {today}.
 Previous conversations: <{prev_convo}>
@@ -143,14 +153,108 @@ Records: <{records}>
 User query: <{question}>
 Inadequate response: <{final}>
 Feedback: <{feedback}>
+
 Instruction:
-Your name is Abigail, an informative and helpful AI assistant of a manufacturing company. Be friendly, conversational, and concise.
-Create a new response that better aligns with the criteria of accuracy to given records, relevance to user query, and completeness of datapoints.
-Use the feedback on the given inadequate response to know which aspects to improve on.
-Do not make explicit comparisons to the old response to avoid confusing the user. Pretend that your answer is the first time."""
-        final = remove_ansi(llm_message(improve_prompt))
+Your name is Abigail, a helpful and informative AI agent. 
+Given an example of inadequate response and feedback how it failed, create a new response that better follows this criteria:
+1. Accuracy: Response is grounded on available facts and free from hallucinated data.
+2. Insights: Response includes some insights about the data.
+3. Proactivity: Response offers help beyond the current scope of the query.
+Do not make comparisons to the old response in your own answer to avoid confusion. Pretend that your answer is the first time.
+Be friendly, conversational, and concise."""
+        final = llm_message(improve_prompt)
+        # final_answer = json_parser(final).get('final_answer')
     
-    return final
+    return {'answer': final, 'response_type': response_type}
+
+def two_agent(question: str, prev_convo: list, session_id: str):
+    final = ''
+    turn_history = prev_convo[:]
+    tool_response_list = []
+
+    for kk in range(7):
+        print(f"## -------- Turn {kk} -------- ##")
+        tool_queue = tool_agent(question, turn_history)
+        print('QUEUE --', tool_queue)
+        if tool_queue == 'none':
+            pass
+        elif tool_queue != []:
+            turn_history.append({'role': 'Abigail', 'content': tool_queue})
+            for tool in tool_queue:
+                tool_result = execute_tool(tool, question, session_id)
+                if tool_result.get('error', ''):
+                    print('ERROR --', tool_result['error'])
+                    return tool_result
+                tool_response_list.append(tool_result)
+                turn_history.append({'role': 'tool_response', 'arguments': tool, 'content': tool_result})
+        else:
+            turn_history.append({'role': 'loop_manager', 'content': 'Error parsing tool from response.'})
+            # continue
+
+        # user_input = input('User: ')
+        # if user_input:
+        #     turn_history.append({'role': 'user', 'content': user_input})
+        
+        answer = analysis_agent(question, turn_history)
+        if 'final_answer' in answer:
+            final = answer.get('final_answer', final)
+            if type(final) == dict:
+                final = '\n\n'.join(final.values())
+            print('ANSWER --', final)
+            break
+        else:
+            print('MORE INFO --', answer)
+            turn_history.append({'role': 'Abigail', 'content': answer.get('message', '')})
+    
+    return {'data_list': tool_response_list, 'initial_analysis': final}
+
+def tool_agent(question: str, turn_history: list):
+    # print('HISTORY --', turn_history)
+    tool_list = empdata_tools + opact_tools + kts_tools
+    today = datetime.today()
+    wd = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+    prompt = f"""Today is {wd[today.weekday()]}, {today}.
+You are Abigail, a ReAct (Reasoning and Acting) AI agent tasked with answering user queries.
+Current query: {question}
+
+Previous steps and observations: {turn_history}
+List of tools: {tool_list}
+
+Instructions:
+1. Given the query and previous reasoning steps, determine the best tool to gather relevant data.
+2. For each parameter, determine the values from the query and enclose in double quotes. If no value, leave it blank.
+For date parameters, use YYYY-MM-DD format enclosed in array. If multiple dates, only include the start and end of the range.
+3. Put the tool calls inside an array, and output in JSON format: {{"tool_calls" : [{{"tool_name":"", "args": {{"parameter":"", "parameter":""}} }} ] }}.
+4. If no tool calls, output in JSON format: {{"tool_calls" : "none" }}.
+
+Remember: be concise and output only what is needed.
+"""
+    result = llm_message(prompt)
+    print('RAW 1 --', result)
+    tool_queue = json_parser(result).get('tool_calls', [])
+    return tool_queue
+
+def analysis_agent(question: str, turn_history: list):
+    today = datetime.today()
+    wd = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+    prompt = f"""Today is {wd[today.weekday()]}, {today}.
+You are Abigail, a ReAct (Reasoning and Acting) AI agent tasked with answering the following query: {question}
+
+Previous steps and observations: {turn_history}
+
+Instructions:
+1. Try to answer the query with the available data.
+2. If information is sufficient, provide a final answer which has two sections. The summary section should highlight interesting datapoints in 3-5 sentences. 
+The insights section should interpret the data and look for positive or negative patterns in 4-7 sentences. Output in JSON format: {{"final_answer": ""}}
+3. If the records are incomplete, determine what kind of information is lacking and output it in JSON format: {{"message": ""}}
+
+Remember: be concise and output only what is needed.
+"""
+    result = llm_message(prompt)
+    print('RAW 2 --', result)
+    return json_parser(result)
 
 # ----- Query Handlers ----- #
 def empdata_handler(question: str, tool: str, args: Dict):
@@ -192,7 +296,12 @@ def empdata_handler(question: str, tool: str, args: Dict):
             filename = f"DEPT_{dept_list}_{date_input[0]}.csv"
         else:
             filename = f"DEPT_{date_input[0]}.csv"
-        text += f"**Present:** {present} out of {total} = {(100*(present / total)):.2f}% \n\n"
+        
+        if total > 0:
+            percent = (100*(present / total))
+        else:
+            percent = 0
+        text += f"**Present:** {present} out of {total} = {percent:.2f}% \n\n"
     
     # print("Records: ", result)
     if len(result) == 0:
@@ -215,7 +324,9 @@ def empdata_handler(question: str, tool: str, args: Dict):
     if len(result) > 10:
         text += f"\n*Showing 10 of {len(result)} records* \n\n"
 
-    instructions = """Work hours can start between 07:00 and 10:00 AM. Employees must log in before 10:00 AM."""
+    instructions = """Employees must log in before 10:00 AM or they will be marked as absent.
+Multiple entries within seconds from the same person are due to employees logging in/out with duplicates for redundancy.
+Log-in location refers to the entrance, not the person's workstation. Do not look for entries on Saturdays and Sundays if there are none."""
     return {'preformat': text, 'raw_records': result, 'instructions': instructions, 'csv_file': filename, 'with_chart': chartable}
 
 def get_activity_records(args: Dict):
@@ -224,14 +335,14 @@ def get_activity_records(args: Dict):
     else:
         date_input = date.today().isoformat()
     act_filters = f'?start_date={date_input}&end_date={date_input}'
-    prod_filters = f'?day={date_input}'
+    prod_filters = f'?start_date={date_input}&end_date={date_input}'
 
     # Retrieve records from api
     activityService = ActivityAPI()
 
     api_ok = False
-    prod_ok = (date_input != date.today().isoformat())
-    for fail_ctr in range(5):
+    prod_ok = False
+    for _ in range(5):
         if not api_ok:
             api_response = activityService.get_all_data(act_filters)
             if api_response['success']:
@@ -246,27 +357,26 @@ def get_activity_records(args: Dict):
             break
 
     # If Activity API fetch fails, return with timeout
-    if not api_ok:
+    if (not api_ok or len(api_response['data']['records']) == 0) and not prod_ok:
         print("API failed after 5 times. Returning...")
         return {'error': 'API failed after 5 times.'}
     
     records = api_response['data']['records']
-    print('LEN:', len(records))
     util_summary = {}
-    if prod_ok and (date_input == date.today().isoformat()):
-        util_records = prod_response['data']['records']
+    # if prod_ok and (date_input == date.today().isoformat()):
+    util_records = prod_response['data']['records']
 
-        for ur in util_records:
-            if KE_match := re.match(r'(KE|LL)\d{4}(?!\d)', ur['operator_en'], re.IGNORECASE):
-                ur['operator_en'] = code_to_name(KE_match.group(0).lower())
-            key = flatten(ur['operator_en'])
-            mod_stt = f'{ur['Model'].lower()}_{ur['Station'].lower()}'
-            if key not in util_summary:
-                util_summary[key] = {mod_stt: ur['%UTIL']}
-            else:
-                util_summary[key].update({mod_stt: ur['%UTIL']})
+    for ur in util_records:
+        if KE_match := re.match(r'(KE|LL)\d{4}(?!\d)', ur['operator_en'], re.IGNORECASE):
+            ur['operator_en'] = code_to_name(KE_match.group(0).lower())
+        key = flatten(ur['operator_en'])
+        mod_stt = f'{ur['Model'].lower()}_{ur['Station'].lower()}'
+        if key not in util_summary:
+            util_summary[key] = {mod_stt: ur['%UTIL']}
+        else:
+            util_summary[key].update({mod_stt: ur['%UTIL']})
         
-        # print(util_summary)
+    # print(util_summary)
     
     # Prepare csv file for writing
     employee_id = args.get('employee_name') or args.get('employee_num')
@@ -277,7 +387,7 @@ def get_activity_records(args: Dict):
 
     filename = 'ACT'
     if employee_id:
-        filename += '_' + employee_id.lower()
+        filename += '_' + employee_id.lower().replace(' ', '-')
     if customer:
         filename += '_' + customer.lower()
     if model:
@@ -287,7 +397,7 @@ def get_activity_records(args: Dict):
     filename += '_' + date_input + '.csv'
 
     csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
-    headers = [k for k in records[0].keys()]
+    headers = ['Customer', 'Model', 'Station', 'Operator', 'operator_code', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status', 'Util(%)']
     writer = csv.DictWriter(csvfile, fieldnames=headers, extrasaction='ignore')
     writer.writeheader()
     
@@ -307,18 +417,19 @@ def get_activity_records(args: Dict):
         if util_dict:
             key = f'{r['Model'].lower()}_{r['Station'].lower()}'
             r['Util(%)'] = util_dict.get(key)
+        writer.writerow(r)
         # Rename Target to Target Cycle Time
         r['Target Cycle Time(s)'] = r.pop('Target(s)')
-        writer.writerow(r)
 
         # DENTSPLY,VPRO2NORDIC,SOLDERING2,"Pineda, Kyra Nicole",665,,30.00,07:03:50,13:28:44,ON TARGET,,KE0244
-        if employee_id and flatten(employee_id) in op_flat:
+        if employee_id and flatten(employee_id) in flatten(r['Operator']):
             filtered.append(r)
         elif (customer and r['Customer'] == customer.upper()) or (model and r['Model'] == model.upper()) or (station and r['Station'] == station.upper()):
             filtered.append(r)
         elif not employee_id and not customer and not model and not station:
             filtered.append(r)
     
+    # print('LEN:', len(records), '--', len(filtered))
     csvfile.close()
     return {'date': date_input, 'filename': filename, 'records': filtered}
     # print('RECORDS:', len(records))
@@ -330,16 +441,23 @@ def opact_handler(tool: str, args: Dict):
         if not employee_id:
             return {'error': 'no employee name or number to search for'}
         actdb = ActivityDB()
-        return actdb.qualified_stations(employee_id, [])
+        allowed = {}
+        if type(employee_id) == str:
+            allowed = actdb.qualified_stations([employee_id], [])
+        elif type(employee_id) == list:
+            allowed = actdb.qualified_stations(employee_id, [])
+        return {'raw_records': allowed}
     elif tool == 'operator_output':
         records = get_activity_records(args)
         instructions = """Include all details for all applicable entries. Lower cycle time than target is good. No cycle time or target is 'on target' by default.
     Utilization rate is how much time they spent working at a given station across their whole shift. Lower utilization early in the shift is expected."""
 
-        if len(records.get('records')) > 0:
+        if len(records.get('records', [])) > 0:
             return {'preformat': '', 'csv_file': records.get('filename'), 'raw_records': records.get('records'), 'instructions': instructions}
         else:
             return {'preformat': "No records for the given date and parameters.", 'raw_records': []}
+    else:
+        return {'error': 'invalid tool name'}
 
 def kts_handler(args: dict, session_id: str, question: str):
     if getProdArgs(session_id).command == 'serial_query':
@@ -353,21 +471,35 @@ def kts_handler(args: dict, session_id: str, question: str):
     
     # Check if customer and model are valid
     dupe_models = []
-    mod_arg = args.get('model', '').lower()
+    mod_arg = str(args.get('customer', '')) + ' ' + str(args.get('model', ''))
+    # if type(args.get('model')) == str:
+    #     mod_arg = args.get('model', '').replace(' ', '').lower()
+    # elif type(args.get('model')) == list:
+    #     mod_arg = args.get('model')[0].replace(' ', '').lower()
+    # else:
+    #     return {'error': 'missing or invalid model argument'}
+
     for schema, model_list in ktsData.models.items():
         for model in model_list:
-            if model in mod_arg:
+            if re.search(model + r"(?!\w)", mod_arg) or re.search(model + r"(?!\w)", question.lower()):
                 getProdArgs(session_id).model = model
                 dupe_models.append(schema)
                 break
     
     if len(dupe_models) > 1 and not getProdArgs(session_id).schema:
-        return {'error': 'model name used by multiple customers, please clarify'}
+        return {'error': 'Model name used by multiple customers, please clarify'}
     elif len(dupe_models) == 1:
         getProdArgs(session_id).schema = dupe_models[0]
-    
-    if not getProdArgs(session_id).model:
-        return {'error': 'missing or invalid model argument'}
+    else:
+        for schema in ktsData.models.keys():
+            if re.search(schema, mod_arg) or re.search(schema, question.lower()):
+                getProdArgs(session_id).schema = schema
+        if getProdArgs(session_id).schema:
+            models = ktsData.models[getProdArgs(session_id).schema]
+            error = f"Select {getProdArgs(session_id).schema} model to view for {getProdArgs(session_id).command}: \n\n" + ', '.join(models)
+            return {'error': error}
+        else:
+            return {'error': 'Missing or invalid model argument'}
     
     if getProdArgs(session_id).command in ['station_yield', 'get_wip', 'failure_details']:
         # Search query for PO argument
@@ -416,74 +548,76 @@ Instead, highlight interesting datapoints and provide a short insight in 4-7 sen
 
 # ----- Helper Functions ----- #
 def execute_tool(tool: dict, question: str, session_id: str):
+    global response_type
     tool_name = tool.get('tool_name', '')
     args = tool.get('args', {})
 
     if tool_name == 'show_employee_list':
-        return attendance_DB().employees
+        response_type = 'attendance'
+        return {'raw_records': attendance_DB().employees}
     elif tool_name == 'show_department_list':
-        return departments
+        response_type = 'attendance'
+        return {'raw_records': departments}
     elif tool_name == 'show_running_models':
-        return ktsData.models
+        response_type = 'KTS'
+        return {'raw_records': ktsData.models}
     elif tool_name == 'raw_attendance' or tool_name == 'dept_turnout':
+        response_type = 'attendance'
         return empdata_handler(question, tool_name, args)
     elif tool_name in ['operator_output', 'show_allowed_stations']:
+        response_type = 'activity'
         return opact_handler(tool_name, args)
     
     KTS_keywords = [kt['name'] for kt in kts_tools]
     if tool_name in KTS_keywords or tool_name == 'show_target_time':
+        response_type = 'KTS'
         getProdArgs(session_id).command = tool_name
         getProdArgs(session_id).date_time = args.get('date', [])
         return kts_handler(args, session_id, question)
-    
+     
     else:
         print('yuh')
-        return {'preformat': 'invalid tool', 'raw_records': []}
+        return {'preformat': '', 'raw_records': []}
 
-def extract_obj(input: str):
+def fix_json(input: str):
+    """" Function to fix broken json output by the LLM """
+    temp_input = input.replace(']', '?').replace('}', '?')
+    final = ''
     cache = []
-    fixed = ''
-    initial = input.find('{')
-    if initial == -1:
-        return ''
-    
-    for char in input[initial:]:
-        fixed += char
+
+    for char in temp_input:
         if char == '{' or char == '[':
             cache.append(char)
-            # print(cache)
-        elif char == '}':
-            if cache[-1] == '{':
+            final += char
+        elif char == '?':
+            if len(cache) == 0:
+                pass
+            elif cache[-1] == '{':
+                final += '}'
                 cache.pop()
-                # print(cache)
-            else:
-                break
-        elif char == ']':
-            if cache[-1] == '[':
+            elif cache[-1] == '[':
+                final += ']'
                 cache.pop()
-                # print(cache)
-            else:
-                break
-        
-        if len(cache) == 0:
-            return fixed
+        else:
+            final += char
+        # print(final)
     
-    return ''
-
-def json_parser(output: str):
+    return final
+    
+def json_parser(input: str):
     # print('RAW --', output)
     try:
-        if output.find('```json') != -1:
-            output = output.strip('```').replace('json', '').replace('\n', '')
-        output = extract_obj(output)
-        result = json.loads(output)
-        print('JSON --', result)
+        input = input.strip('`').replace('json', '')
+        result = eval(input)
+        # print('EVAL --', result)
         return result
     except:
-        # output = extract_obj(output)
-        # result = json.loads(output)
-        # print('JSON --', result)
-        return {}
+        try:
+            result = eval(fix_json(input))
+            # print('FIX --', result)
+            return result
+        except:
+            return {}
 
 def remove_ansi(text: str):
     text = text.replace('\x1b[K\n', '')
@@ -529,6 +663,6 @@ def code_to_name(KE_number: str):
     return KE_number
 
 def flatten(name: str):
-    splitter = name.lower().replace('-','').replace(',', '').split()
+    splitter = name.lower().replace('-','').replace(',', ' ').split()
     splitter.sort()
     return ' '.join(splitter)

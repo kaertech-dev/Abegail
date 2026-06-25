@@ -15,18 +15,9 @@ from typing import Any, List, Dict, Optional
 from html_parser import parse_html_to_json
 import mysql.connector
 from mysql.connector import Error
+from config import DB_CONFIG, ACTIVITY_API_URL, PRODUCTIVITY_API
 
 path_name = './csv_files/'
-
-DB_CONFIG = {
-    'host': '192.168.1.38',
-    'user': 'labeling',
-    'password': 'labeling',
-    'database': '',
-    'autocommit': True,
-    'use_unicode': True,
-    'charset': 'utf8mb4'
-}
 
 def std_name(records: list) -> list:
     for rec in records:
@@ -61,10 +52,6 @@ def format_entry(entry: dict, filter: str) -> str:
     return text
 
 # ==================== API CLASS ====================
-
-ACTIVITY_API_URL = os.getenv('ACTIVITY_API_URL', 'http://192.168.20.200/activity/api/operator_today')
-PRODUCTIVITY_API = os.getenv('PRODUCTIVITY_API', 'http://192.168.20.200/productivity/api/operator_today')
-
 class ActivityAPI:
     def __init__(self, api_url: Optional[str] = None):
         if api_url is None:

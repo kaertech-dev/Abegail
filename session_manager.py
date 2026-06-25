@@ -57,16 +57,16 @@ class SessionObject:
         processed = nlp(query)
         relevant = []
 
-        for message in reversed(self.short_term):
-            if len(relevant) == 10:
-                break
+        for message in self.short_term:
+            # if len(relevant) == 10:
+            #     break
 
             # ref = nlp(message['user'])
             # if processed.similarity(ref) > 0.7:
             # relevant.append({user_key: message['user'], 'response': message['bot']})
             relevant.append({'role': 'user', 'content': message['user']})
             relevant.append({'role': 'Abigail', 'content': message['bot']})
-        relevant.reverse()
+        # relevant.reverse()
         return relevant
 
 class SessionManager:

@@ -28,6 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeSettings();
     initializeEventListeners();
     document.getElementById('welcomeTime').innerHTML += getCurrentTime();
+    const d = new Date();
+    document.getElementById('start-marker').innerHTML = `<p>-----</p><p>${d.toDateString()}</p><p>-----</p>`;
     document.getElementById('chatInput').focus();
     
     // Set font size
@@ -1169,6 +1171,18 @@ function addMessage_plain(message, isUser = false, metadata = {}) {
 
 function addMessage(message, isUser = false, metadata = {}) {
     const messagesContainer = document.getElementById('chat-messages');
+
+    // get last date marker
+    const marker_list = document.getElementsByClassName('date-marker');
+    let latest_marker_date = marker_list[marker_list.length-1].children[1].innerText;
+    const curr_d = new Date();
+    if (latest_marker_date != curr_d.toDateString()){
+        const newMarker = document.createElement('div');
+        newMarker.className = 'date-marker';
+        newMarker.innerHTML = `<p>-----</p><p>${curr_d.toDateString()}</p><p>-----</p>`;
+        messagesContainer.appendChild(newMarker);
+    }
+
     const messageDiv = document.createElement('div');
     messageDiv.className = `message-bubble ${isUser ? 'user' : 'bot'}`;
     messageDiv.dataset.messageId = metadata.id || `msg_${Date.now()}_${Math.random()}`;
@@ -1505,9 +1519,9 @@ async function New_sendMessage(withTranscript = false) {
         hideTypingIndicator();
         
         if (data_2.error) {
-            addMessage_plain(data_2.message || 'An error occurred', false, { ...data_2, response_type: 'error' });
+            addMessage_plain(data_2.error || 'An error occurred', false, { ...data_2, response_type: 'error' });
             next_flag = false;
-            updateStatus('Error', 'error');
+            // updateStatus('Error', 'error');
         }
         else {
             for (let result of data_2.message_list){
