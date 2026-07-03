@@ -824,6 +824,21 @@ body {
     gap: 15px;
 }
 
+.cancel-query {
+    width: 32px;
+    height: 32px;
+    background: var(--danger-color);
+    color: white;
+    border-radius: 50%;
+    padding: 6px 12px;
+    margin-left: 5px;
+    margin-bottom: 5px;
+}
+
+.cancel-query:active {
+    transform: scale(0.95);
+}
+
 .message-bubble.user {
     justify-content: flex-end;
 }

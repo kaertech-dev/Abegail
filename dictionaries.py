@@ -30,10 +30,10 @@ empdata_tools = [
         'name': 'show_employee_list',
         'description': 'list of employees with their ID number, department, and job title'
     },
-    {
-        'name': 'show_department_list',
-        'description': 'list of departments'
-    },
+    # {
+    #     'name': 'show_department_list',
+    #     'description': 'list of departments'
+    # },
     {
         'name': 'raw_attendance',
         'description': 'retrieve attendance logs for a person and date',

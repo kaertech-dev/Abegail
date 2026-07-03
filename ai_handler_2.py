@@ -1,7 +1,8 @@
 import os
 import re
 import csv
-import json
+# import json
+import asyncio
 import subprocess
 from typing import List, Dict
 from datetime import datetime, date
@@ -17,12 +18,33 @@ DEFAULT_MODEL = 'deepseek-r1:14b'
 path_name = './csv_files/'
 ktsData = ProductionDB()
 response_type = 'general'
+cancelRequest = False
 
 # ----- LLM Call ----- #
+def llm_cancel_cleanup(model_name: str = DEFAULT_MODEL):
+    env = os.environ.copy()
+    env['OLLAMA_NUM_GPU'] = '1'
+    env['OLLAMA_CONTEXT_LENGTH'] = '32000'
+    
+    process = subprocess.Popen(
+        ["ollama", "stop", model_name],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env
+    )
+
+    stdout, stderr = process.communicate()
+    # print('cleanup')
+
 def llm_message(prompt: str, model_name: str = DEFAULT_MODEL, thinking=False):
     try:
         env = os.environ.copy()
         env['OLLAMA_NUM_GPU'] = '1'
+        env['OLLAMA_CONTEXT_LENGTH'] = '32000'
         
         process = subprocess.Popen(
             ["ollama", "run", model_name],
@@ -113,11 +135,9 @@ Assume parameters are not required. They will be handled externally. For the dat
         txt_result = raw_response
     return {'data_list': tool_response_list, 'initial_analysis': txt_result}
 
-def checker_agent(question:str, records: dict, initial_response: str, prev_convo: list):
+async def checker_agent(question:str, records: dict, initial_response: str, prev_convo: list):
     global response_type
     final = initial_response
-    # if not final:
-    #     final = "No initial response. ONLY GIVE ZERO POINTS because there's nothing to grade. NOT EVEN 1 POINT."
     today = datetime.today()
     wd = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     
@@ -167,10 +187,11 @@ Be friendly, conversational, and concise."""
     
     return {'answer': final, 'response_type': response_type}
 
-def two_agent(question: str, prev_convo: list, session_id: str):
+async def two_agent(question: str, prev_convo: list, session_id: str):
     final = ''
     turn_history = prev_convo[:]
     tool_response_list = []
+    # print('question:', question)
 
     for kk in range(7):
         print(f"## -------- Turn {kk} -------- ##")
@@ -185,11 +206,16 @@ def two_agent(question: str, prev_convo: list, session_id: str):
                 if tool_result.get('error', ''):
                     print('ERROR --', tool_result['error'])
                     return tool_result
-                tool_response_list.append(tool_result)
-                turn_history.append({'role': 'tool_response', 'arguments': tool, 'content': tool_result})
+                elif tool_result.get('multiple'):
+                    for tool_resp in tool_result.get('multiple'):
+                        tool_response_list.append(tool_resp)
+                        turn_history.append({'role': 'tool_response', 'arguments': tool, 'content': tool_resp})
+                else:
+                    tool_response_list.append(tool_result)
+                    turn_history.append({'role': 'tool_response', 'arguments': tool, 'content': tool_result})
         else:
-            turn_history.append({'role': 'loop_manager', 'content': 'Error parsing tool from response.'})
-            # continue
+            turn_history.append({'role': 'loop_manager', 'content': 'Error tool format.'})
+            continue
 
         # user_input = input('User: ')
         # if user_input:
@@ -201,12 +227,12 @@ def two_agent(question: str, prev_convo: list, session_id: str):
             if type(final) == dict:
                 final = '\n\n'.join(final.values())
             print('ANSWER --', final)
-            break
+            return {'data_list': tool_response_list, 'initial_analysis': final}
         else:
             print('MORE INFO --', answer)
             turn_history.append({'role': 'Abigail', 'content': answer.get('message', '')})
     
-    return {'data_list': tool_response_list, 'initial_analysis': final}
+    return {'data_list': tool_response_list, 'initial_analysis': answer}
 
 def tool_agent(question: str, turn_history: list):
     # print('HISTORY --', turn_history)
@@ -215,20 +241,19 @@ def tool_agent(question: str, turn_history: list):
     wd = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
     prompt = f"""Today is {wd[today.weekday()]}, {today}.
-You are Abigail, a ReAct (Reasoning and Acting) AI agent tasked with answering user queries.
-Current query: {question}
-
+You are Abigail, an informative AI agent made for answering user queries.
 Previous steps and observations: {turn_history}
 List of tools: {tool_list}
 
 Instructions:
-1. Given the query and previous reasoning steps, determine the best tool to gather relevant data.
-2. For each parameter, determine the values from the query and enclose in double quotes. If no value, leave it blank.
-For date parameters, use YYYY-MM-DD format enclosed in array. If multiple dates, only include the start and end of the range.
-3. Put the tool calls inside an array, and output in JSON format: {{"tool_calls" : [{{"tool_name":"", "args": {{"parameter":"", "parameter":""}} }} ] }}.
-4. If no tool calls, output in JSON format: {{"tool_calls" : "none" }}.
+1. Analyze the user query and determine the best tool to gather relevant data.
+2. Enclose the parameter values in array. If parameter has no value based on the query, use empty array.
+3. Use YYYY-MM-DD format for the date parameter. If no date, use empty array. If multiple dates, only include the start and end of the range.
+4. Put all tool calls in an array and output in JSON format: {{"tool_calls" : [{{"tool_name":"", "args": {{"parameter":[], "parameter":[]}} }} ] }}.
+5. If no tool calls, output in JSON format: {{"tool_calls" : "none" }}.
 
 Remember: be concise and output only what is needed.
+User query: {question}
 """
     result = llm_message(prompt)
     print('RAW 1 --', result)
@@ -257,6 +282,58 @@ Remember: be concise and output only what is needed.
     return json_parser(result)
 
 # ----- Query Handlers ----- #
+def execute_tool(tool: dict, question: str, session_id: str):
+    global response_type
+    tool_name = tool.get('tool_name', '')
+    args = tool.get('args', {})
+
+    if tool_name == 'show_employee_list':
+        response_type = 'attendance'
+        return {'raw_records': attendance_DB().employees}
+    elif tool_name == 'show_department_list':
+        response_type = 'attendance'
+        return {'raw_records': departments}
+    elif tool_name == 'show_running_models':
+        response_type = 'KTS'
+        return {'raw_records': ktsData.models}
+    elif tool_name == 'raw_attendance' or tool_name == 'dept_turnout':
+        response_type = 'attendance'
+        return empdata_handler(question, tool_name, args)
+    elif tool_name in ['operator_output', 'show_allowed_stations']:
+        response_type = 'activity'
+        return opact_handler(tool_name, args)
+    
+    KTS_keywords = [kt['name'] for kt in kts_tools]
+    if tool_name in KTS_keywords or tool_name == 'show_target_time':
+        response_type = 'KTS'
+        tool_result_list = []
+        mod_list = args.get('model', [])
+        print('model list:', mod_list)
+        if not mod_list:
+            getProdArgs(session_id).command = tool_name
+            date_time = args.get('date')
+            if type(date_time) == str:
+                getProdArgs(session_id).date_time = [date_time]
+            else:
+                getProdArgs(session_id).date_time = date_time
+            return kts_handler(args, session_id, question)
+
+        for mod in mod_list:
+            args['model'] = mod.lower()
+            getProdArgs(session_id).command = tool_name
+            date_time = args.get('date')
+            if type(date_time) == str:
+                getProdArgs(session_id).date_time = [date_time]
+            else:
+                getProdArgs(session_id).date_time = date_time
+            result = kts_handler(args, session_id, question)
+            tool_result_list.append(result)
+        return {'multiple': tool_result_list}
+     
+    else:
+        print('yuh')
+        return {'preformat': '', 'raw_records': []}
+
 def empdata_handler(question: str, tool: str, args: Dict):
     result = []
     filename = ''
@@ -264,7 +341,7 @@ def empdata_handler(question: str, tool: str, args: Dict):
     chartable = False
     date_input = args.get('date') or [date.today().isoformat()]
 
-    identifiers = args.get('employee_name') or args.get('employee_num') or args.get('identifier')
+    identifiers = args.get('employee_name', []) + args.get('employee_num', []) + args.get('identifier', [])
 
     if tool == 'basic_info':
         result = attendance_DB().find_person(args)
@@ -278,8 +355,9 @@ def empdata_handler(question: str, tool: str, args: Dict):
 
     elif tool == 'raw_attendance':
         result = attendance_DB().get_attendance(date_input, args)
-        filename = f"ATT_{identifiers}_{'_'.join(date_input)}.csv"
+        filename = f"ATT_{'-'.join(identifiers)}_{date_input[0]}.csv"
         if len(date_input) > 1:
+            filename = f"ATT_{'-'.join(identifiers)}_{date_input[0]}_{date_input[-1]}.csv"
             chartable = True
     
     elif tool == 'dept_turnout':
@@ -307,6 +385,7 @@ def empdata_handler(question: str, tool: str, args: Dict):
     if len(result) == 0:
         return {'preformat': 'No records in the database for the given date and parameters.', 'raw_records': []}
     
+    filename = filename.replace(' ', '-')
     csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
     headers = list(result[0].keys())
     writer = csv.DictWriter(csvfile, fieldnames=headers, extrasaction='ignore')
@@ -327,7 +406,7 @@ def empdata_handler(question: str, tool: str, args: Dict):
     instructions = """Employees must log in before 10:00 AM or they will be marked as absent.
 Multiple entries within seconds from the same person are due to employees logging in/out with duplicates for redundancy.
 Log-in location refers to the entrance, not the person's workstation. Do not look for entries on Saturdays and Sundays if there are none."""
-    return {'preformat': text, 'raw_records': result, 'instructions': instructions, 'csv_file': filename, 'with_chart': chartable}
+    return {'preformat': text, 'raw_records': result, 'instructions': instructions, 'csv_file': [filename], 'with_chart': chartable}
 
 def get_activity_records(args: Dict):
     if args.get('date'):
@@ -379,15 +458,15 @@ def get_activity_records(args: Dict):
     # print(util_summary)
     
     # Prepare csv file for writing
-    employee_id = args.get('employee_name') or args.get('employee_num')
-    customer = args.get('customer', '')
-    model = args.get('model', '')
-    station = args.get('station', '')
+    employee_id = args.get('employee_name', []) + args.get('employee_num', [])
+    customer = None if not args.get('customer') else args.get('customer')[0]
+    model = None if not args.get('model') else args.get('model')[0]
+    station = None if not args.get('station') else args.get('station')[0]
     # print('filters:', employee_id, customer, model, station)
 
     filename = 'ACT'
     if employee_id:
-        filename += '_' + employee_id.lower().replace(' ', '-')
+        filename += '_' + employee_id[0].lower()
     if customer:
         filename += '_' + customer.lower()
     if model:
@@ -396,6 +475,7 @@ def get_activity_records(args: Dict):
         filename += '_' + station.lower()
     filename += '_' + date_input + '.csv'
 
+    filename = filename.replace(' ', '-')
     csvfile = open(path_name + filename, 'w', newline='', encoding='utf-8')
     headers = ['Customer', 'Model', 'Station', 'Operator', 'operator_code', 'Output', 'Cycle Time(s)', 'Target(s)', 'Start Time', 'End time', 'Status', 'Util(%)']
     writer = csv.DictWriter(csvfile, fieldnames=headers, extrasaction='ignore')
@@ -431,21 +511,21 @@ def get_activity_records(args: Dict):
     
     # print('LEN:', len(records), '--', len(filtered))
     csvfile.close()
-    return {'date': date_input, 'filename': filename, 'records': filtered}
+    return {'date': date_input, 'filename': [filename], 'records': filtered}
     # print('RECORDS:', len(records))
     # return True
 
 def opact_handler(tool: str, args: Dict):
     if tool == 'show_allowed_stations':
-        employee_id = args.get('employee_name') or args.get('employee_num')
+        employee_id = args.get('employee_name',[]) + args.get('employee_num',[])
         if not employee_id:
             return {'error': 'no employee name or number to search for'}
         actdb = ActivityDB()
-        allowed = {}
-        if type(employee_id) == str:
-            allowed = actdb.qualified_stations([employee_id], [])
-        elif type(employee_id) == list:
-            allowed = actdb.qualified_stations(employee_id, [])
+        # allowed = {}
+        # if type(employee_id) == str:
+        #     allowed = actdb.qualified_stations([employee_id], [])
+        # elif type(employee_id) == list:
+        allowed = actdb.qualified_stations(employee_id, [])
         return {'raw_records': allowed}
     elif tool == 'operator_output':
         records = get_activity_records(args)
@@ -453,7 +533,7 @@ def opact_handler(tool: str, args: Dict):
     Utilization rate is how much time they spent working at a given station across their whole shift. Lower utilization early in the shift is expected."""
 
         if len(records.get('records', [])) > 0:
-            return {'preformat': '', 'csv_file': records.get('filename'), 'raw_records': records.get('records'), 'instructions': instructions}
+            return {'preformat': '', 'csv_file': records.get('filename', []), 'raw_records': records.get('records'), 'instructions': instructions}
         else:
             return {'preformat': "No records for the given date and parameters.", 'raw_records': []}
     else:
@@ -470,27 +550,40 @@ def kts_handler(args: dict, session_id: str, question: str):
         return ktsData.execute(getProdArgs(session_id).command, getProdArgs(session_id))
     
     # Check if customer and model are valid
-    dupe_models = []
+    possible_schema = []
     mod_arg = str(args.get('customer', '')) + ' ' + str(args.get('model', ''))
-    # if type(args.get('model')) == str:
-    #     mod_arg = args.get('model', '').replace(' ', '').lower()
-    # elif type(args.get('model')) == list:
-    #     mod_arg = args.get('model')[0].replace(' ', '').lower()
-    # else:
-    #     return {'error': 'missing or invalid model argument'}
 
     for schema, model_list in ktsData.models.items():
         for model in model_list:
-            if re.search(model + r"(?!\w)", mod_arg) or re.search(model + r"(?!\w)", question.lower()):
+            if re.search(model + r"(?!\w)", mod_arg):
                 getProdArgs(session_id).model = model
-                dupe_models.append(schema)
+                if re.search(schema + r"(?!\w)", mod_arg):
+                    getProdArgs(session_id).schema = schema
+                else:
+                    possible_schema.append(schema)
                 break
+        if getProdArgs(session_id).schema:
+            break
+    # print('First Pass --', getProdArgs(session_id).schema, getProdArgs(session_id).model)
+
+    # If no customer or model in the arguments, try looking directly in the query
+    if not getProdArgs(session_id).model:
+        possible_schema = []
+        for schema, model_list in ktsData.models.items():
+            for model in model_list:
+                if model + ' ' in question.lower():
+                    getProdArgs(session_id).model = model
+                    if schema in question.lower():
+                        getProdArgs(session_id).schema = schema
+                    else:
+                        possible_schema.append(schema)
+                    break
+            if getProdArgs(session_id).schema:
+                break
+        # print('Second Pass --', getProdArgs(session_id).schema, getProdArgs(session_id).model)
     
-    if len(dupe_models) > 1 and not getProdArgs(session_id).schema:
-        return {'error': 'Model name used by multiple customers, please clarify'}
-    elif len(dupe_models) == 1:
-        getProdArgs(session_id).schema = dupe_models[0]
-    else:
+    # If no model in arguments or query, return error but try looking for customer
+    if not getProdArgs(session_id).model:
         for schema in ktsData.models.keys():
             if re.search(schema, mod_arg) or re.search(schema, question.lower()):
                 getProdArgs(session_id).schema = schema
@@ -500,6 +593,15 @@ def kts_handler(args: dict, session_id: str, question: str):
             return {'error': error}
         else:
             return {'error': 'Missing or invalid model argument'}
+
+    if not getProdArgs(session_id).schema:
+        if len(possible_schema) == 1:
+            # Model name is unique and only belongs to one schema
+            getProdArgs(session_id).schema = possible_schema[0]
+        elif len(possible_schema) > 1:
+            # Model name belongs to more than one schema
+            return {'error': 'Model name used by multiple customers, please clarify.'}
+        # print('Third Pass --', getProdArgs(session_id).schema, getProdArgs(session_id).model)
     
     if getProdArgs(session_id).command in ['station_yield', 'get_wip', 'failure_details']:
         # Search query for PO argument
@@ -547,38 +649,6 @@ Instead, highlight interesting datapoints and provide a short insight in 4-7 sen
         return {'preformat': ''}
 
 # ----- Helper Functions ----- #
-def execute_tool(tool: dict, question: str, session_id: str):
-    global response_type
-    tool_name = tool.get('tool_name', '')
-    args = tool.get('args', {})
-
-    if tool_name == 'show_employee_list':
-        response_type = 'attendance'
-        return {'raw_records': attendance_DB().employees}
-    elif tool_name == 'show_department_list':
-        response_type = 'attendance'
-        return {'raw_records': departments}
-    elif tool_name == 'show_running_models':
-        response_type = 'KTS'
-        return {'raw_records': ktsData.models}
-    elif tool_name == 'raw_attendance' or tool_name == 'dept_turnout':
-        response_type = 'attendance'
-        return empdata_handler(question, tool_name, args)
-    elif tool_name in ['operator_output', 'show_allowed_stations']:
-        response_type = 'activity'
-        return opact_handler(tool_name, args)
-    
-    KTS_keywords = [kt['name'] for kt in kts_tools]
-    if tool_name in KTS_keywords or tool_name == 'show_target_time':
-        response_type = 'KTS'
-        getProdArgs(session_id).command = tool_name
-        getProdArgs(session_id).date_time = args.get('date', [])
-        return kts_handler(args, session_id, question)
-     
-    else:
-        print('yuh')
-        return {'preformat': '', 'raw_records': []}
-
 def fix_json(input: str):
     """" Function to fix broken json output by the LLM """
     temp_input = input.replace(']', '?').replace('}', '?')
@@ -663,6 +733,8 @@ def code_to_name(KE_number: str):
     return KE_number
 
 def flatten(name: str):
+    if type(name) == list:
+        name = name[0]
     splitter = name.lower().replace('-','').replace(',', ' ').split()
     splitter.sort()
     return ' '.join(splitter)

@@ -1125,14 +1125,14 @@ function addMessage_plain(message, isUser = false, metadata = {}) {
     let csvButton = '';
     const fileArray = [];
     if (metadata.csv){
-        fileArray.push(...metadata.csv.split(" "));
+        fileArray.push(...metadata.csv);
         // console.log(fileArray);
         for (let entry of fileArray) {
             // console.log(entry);
             if (messageContent.search(entry) != -1) {
                 let new_button = `
                 <div class="csv-action">
-                    <button type="button" class="download-csv" onclick="downloadCSV('${entry}')" title="download csv">Download csv file</button>
+                    <button type="button" class="download-csv" onclick="downloadCSV('${entry}')" title="download csv">${entry}</button>
                 </div>`;
                 messageContent = messageContent.replace(entry, new_button);
             }
@@ -1291,11 +1291,38 @@ function addMessage(message, isUser = false, metadata = {}) {
     playSound('click');
 }
 
-function showTypingIndicator(step='') {
+let cancelRequest = false;
+async function cancelQuery() {
+    try {
+        const response = await fetch('/api/stop', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                session_id: sessionId
+            })
+        });
+        
+        const data = await response.json();
+        console.log(data.success || data.error)
+        cancelRequest = true;
+        // addMessage('Query cancelled by user.', false);
+        hideTypingIndicator();
+        // updateStatus('Ready', 'ready');
+        showTypingIndicator('Stopping query', false);
+    }
+    catch {
+        console.log('Error');
+    }
+}
+
+function showTypingIndicator(step='', cancellable=true) {
     const messagesContainer = document.getElementById('chat-messages');
     const typingDiv = document.createElement('div');
     typingDiv.className = 'message-bubble bot';
     typingDiv.id = 'typingIndicator';
+    const cancelButton = cancellable? '<div class="cancel-query" id="cancel-query" title="Cancel query" onclick="cancelQuery()">X</div>' : '';
     typingDiv.innerHTML = `
         <div class="message-content">
             <div class="avatar bot-avatar"><img src="/static/images/abigail-removebg-preview.png" alt="Abigail" class="avatar-image"></div>
@@ -1305,6 +1332,7 @@ function showTypingIndicator(step='') {
                 <span></span>
                 <span></span>
             </div>
+            ${cancelButton}
         </div>
     `;
     messagesContainer.appendChild(typingDiv);
@@ -1419,6 +1447,7 @@ async function sendMessage(withTranscript = false) {
 }
 
 async function New_sendMessage(withTranscript = false) {
+    cancelRequest = false;
     const input = document.getElementById('chatInput');
     const sendButton = document.getElementById('chatSend');
     let message = input.value.trim();
@@ -1455,55 +1484,6 @@ async function New_sendMessage(withTranscript = false) {
 
     let next_flag = false;
     try {
-        // Analyzing Query Step
-        // const response_1 = await fetch('/api/chat/1', {
-        //     method: 'POST',
-        //     headers: {
-        //         'Content-Type': 'application/json',
-        //     },
-        //     body: JSON.stringify({
-        //         message: message,
-        //         session_id: sessionId,
-        //         fileAttached: filename
-        //     })
-        // });
-        
-        // const data_1 = await response_1.json();
-        // hideTypingIndicator();
-        
-        // if (data_1.error) {
-        //     addMessage_plain(data_1.message || 'An error occurred', false, { ...data_1, response_type: 'error' });
-        //     return;
-        // }
-
-        // if (data_1.response_type === 'chart') {
-        //     let chartValues = await parseCsv(message);
-        //     if (!chartValues.data) {
-        //         console.log("Error creating chart");
-        //     }
-        //     else{
-        //         createChart(chartValues.name, chartValues.data, chartValues.labels);
-        //     }
-        // }
-
-        // if (data_1.response_type != 'summary') {
-        //     // addMessage_plain(data_1.message, false, data_1);
-        //     next_flag = true;
-        //     showTypingIndicator('Retrieving data');
-        // }
-        // else {
-        //     next_flag = false;
-        //     addMessage_plain(data_1.message, false, data_1);
-        //     updateStatus('Ready', 'ready');
-        // }
-
-        // if (next_flag == false) {
-        //     sendButton.disabled = false;
-        //     input.disabled = false;
-        //     input.focus();
-        //     return;
-        // };
-
         const response_2 = await fetch('/api/chat/2', {
             method: 'POST',
             headers: {
@@ -1517,6 +1497,13 @@ async function New_sendMessage(withTranscript = false) {
         
         const data_2 = await response_2.json(); //array of results
         hideTypingIndicator();
+
+        if (cancelRequest) {
+            addMessage('Query cancelled by user.', false);
+            hideTypingIndicator();
+            updateStatus('Ready', 'ready');
+            return;
+        }
         
         if (data_2.error) {
             addMessage_plain(data_2.error || 'An error occurred', false, { ...data_2, response_type: 'error' });
@@ -1553,6 +1540,13 @@ async function New_sendMessage(withTranscript = false) {
         
         const data_3 = await response_3.json();
         hideTypingIndicator();
+
+        if (cancelRequest) {
+            addMessage('Query cancelled by user.', false);
+            hideTypingIndicator();
+            updateStatus('Ready', 'ready');
+            return;
+        }
         
         if (data_3.error) {
             addMessage(data_3.message || 'An error occurred', false, { ...data_3, response_type: 'error' });

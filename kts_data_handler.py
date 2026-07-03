@@ -330,13 +330,22 @@ class ProductionDB:
                 except:
                     unit_history[station] = {'serial_num':'', 'status':'0', 'date_time':'n/a', 'operator_en':'n/a'}
             
+            filename = f"{serial_num}_{schema}_{model}.csv"
+            with open(CSV_PATH + filename, 'w', newline='') as output_file:
+                writer = csv.DictWriter(output_file, ['process', 'status', 'date_time', 'operator_en'], extrasaction='ignore')
+                writer.writeheader()
+                for station, values in unit_history.items():
+                    row = {'process', station}
+                    row.update(values)
+                    writer.writerow(row)
+            
             output = f"## Serial Query: {serial_num} \n\n"
             output += f"**Schema:** {schema} \n\n"
             output += f"**Model:** {model} \n\n"
             output += f"**PO Number:** {found.get('po_num','')} \n\n"
             table_headers = ['process', 'status', 'date_time', 'operator_en']
             output += makeTable(table_headers, unit_history)
-            return {'preformat': output, 'raw_records': unit_history, 'response_type': 'KTS'}
+            return {'preformat': output, 'raw_records': unit_history, 'csv_file': [filename], 'response_type': 'KTS'}
         
         except Exception as e:
             return {'preformat': str(e), 'response_type': 'Error'}
@@ -439,7 +448,7 @@ class ProductionDB:
             exportCSV(filename, csv_data)
             result = str_formatter(batch_summary, f'Work in Progress')
             batch_summary.update({'schema': schema, 'model': model, 'po_num': PO_num, 'date': date_input})
-            return {'preformat': result, 'raw_records': batch_summary, 'csv_file': filename, 'response_type': 'KTS'}
+            return {'preformat': result, 'raw_records': batch_summary, 'csv_file': [filename], 'response_type': 'KTS'}
 
         finally:
             if cursor:
@@ -525,7 +534,7 @@ class ProductionDB:
             result = str_formatter(record_summary, f"Station Details for {schema} {model}")
             record_summary.update({'schema': schema, 'model': model, 'po_num': po_num, 'date': ' to '.join(date_input)})
             instr = " A and B refer to employee shifts, so 'A_pass' means units that successfully passed the station during shift A."
-            return {'preformat': result, 'raw_records': record_summary, 'csv_file': ' '.join(filename_comp), 'instructions': instr, 'response_type': 'KTS'}
+            return {'preformat': result, 'raw_records': record_summary, 'csv_file': filename_comp, 'instructions': instr, 'response_type': 'KTS'}
         
         except Exception as e:
             print("Error:", e)
@@ -586,8 +595,7 @@ class ProductionDB:
         filename = f"running_models_{'_'.join(date_input)}.csv"
         exportCSV(filename, csv_data)
         result = str_formatter(all_summary, 'Running Models')
-        return {'preformat': result, 'raw_records': all_summary, 'csv_file': filename, 'response_type': 'KTS'}
-        # return {'preformat': text, 'raw_records': result, 'csv_file': filename}
+        return {'preformat': result, 'raw_records': all_summary, 'csv_file': [filename], 'response_type': 'KTS'}
 
     def listPO(self, customer: str, model: str):
         po_list = self._show_all_PO(customer, model)
@@ -670,7 +678,7 @@ class ProductionDB:
             formatted += "<table>" + table + "</table>"
             
             output_file.close()
-            return {'preformat': formatted, 'raw_records': total_failure, 'csv_file': filename, 'response_type': 'KTS'}
+            return {'preformat': formatted, 'raw_records': total_failure, 'csv_file': [filename], 'response_type': 'KTS'}
         
         finally:
             if cursor:

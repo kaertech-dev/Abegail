@@ -1,18 +1,19 @@
 # app.py - Refactored with Modular Architecture
 from flask import Flask, render_template, request, jsonify, send_from_directory, Response
 from werkzeug.utils import secure_filename
+# from flask_login import LoginManager
 from flask_cors import CORS
 from datetime import datetime, timedelta, date
 import os
 import csv
-# import numpy as np
 import socket
-# import logging
+import asyncio
+import subprocess
 import traceback
 
 from db_handler import get_db_handler
 from ai_handler import ask_with_file_parse, detectAlias
-from ai_handler_2 import checker_agent, two_agent
+from ai_handler_2 import checker_agent, two_agent, llm_cancel_cleanup
 from quick_responses import learn_from_conversation
 from context_manager import get_context_manager
 from knowledge_base import get_knowledge_base
@@ -26,6 +27,7 @@ from camera import VideoCamera, face_logs
 camera = VideoCamera()
 
 app = Flask(__name__)
+# login_manager = LoginManager()
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST"]}})
 
 CSV_BASE_PATH = "./csv_files/"
@@ -95,9 +97,11 @@ def download_file(filename):
 
 loop_result = {}
 preformat_list = []
+task_main = None
 @app.route('/api/chat/<path:step>', methods=['POST'])
-def chat(step):
+async def chat(step):
     """Main chat endpoint - routes queries to appropriate handlers"""
+    global task_main
     try:
         data = request.json
         message = data.get('message', '').strip()
@@ -134,55 +138,62 @@ def chat(step):
             return jsonify(bot_msg)
         
         # Process query: Attendance, Activity, Traceability, General
-        # if not result:
-        #     result = ask_general_question(message, relevant_context, current_session.user_name)
         global loop_result
         global preformat_list
         message = detectAlias(message)
-        # if step == '1':
-        #     print('## Intent Step')
-        #     intent = getIntent(message, relevant_context, session_id)
-        #     bot_msg = session_mgr.create_message('bot', intent['tool_queue'], session_id, user_msg['id'], response_type=intent['response_type'])
-        #     return jsonify(bot_msg)
-        # elif step == '2':
-        #     print('## Data Step')
-        #     raw_data = getData(message, intent, session_id, relevant_context)
-        #     bot_msg = session_mgr.create_message('bot', raw_data.get('preformat', ''), session_id, user_msg['id'], response_type=raw_data['response_type'],
-        #                                          csv = raw_data.get('csv_file'), with_chart = raw_data.get('with_chart', False))
-        #     return jsonify(bot_msg)
-        # elif step == '3':
-        #     print('## Analysis Step')
-        #     result = getAnalysis(message, raw_data, relevant_context)
+
         if step == '2':
-            loop_result = two_agent(message, relevant_context, session_id)
-            if loop_result.get('error'):
-                current_session.update_history(message, loop_result['error'])
-                return jsonify({'error': loop_result['error']})
+            task_main = asyncio.create_task(two_agent(message, relevant_context, session_id))
+            # loop_result = two_agent(message, relevant_context, session_id)
+            try:
+                await task_main
+            except asyncio.CancelledError:
+                print('step 2 cancel')
+                llm_cancel_cleanup()
+                return jsonify({'success': 'aborted by user'})
             bot_msgs = []
-            print('ORIG ANSWER ---- #\n', loop_result.get('initial_analysis'))
-            for raw_data in loop_result.get('data_list', []):
-                temp = session_mgr.create_message('bot', raw_data.get('preformat', ''), session_id, user_msg['id'],
-                                                 csv = raw_data.get('csv_file'), with_chart = raw_data.get('with_chart', False))
-                preformat_list.append(raw_data.get('preformat', ''))
-                bot_msgs.append(temp)
+            if loop_result := task_main.result():
+                if loop_result.get('error'):
+                    current_session.update_history(message, loop_result['error'])
+                    return jsonify({'error': loop_result['error']})
+                print('ORIG ANSWER ---- #\n', loop_result.get('initial_analysis'))
+                for raw_data in loop_result.get('data_list', []):
+                    temp = session_mgr.create_message('bot', raw_data.get('preformat', ''), session_id, user_msg['id'],
+                                                    csv = raw_data.get('csv_file'), with_chart = raw_data.get('with_chart', False))
+                    preformat_list.append(raw_data.get('preformat', ''))
+                    bot_msgs.append(temp)
+                task_main = None
             return jsonify({'message_list': bot_msgs})
         elif step == '3':
-            result = checker_agent(message, loop_result.get('data_list'), loop_result.get('initial_analysis'), relevant_context)
+            task_main = asyncio.create_task(checker_agent(message, loop_result.get('data_list'), loop_result.get('initial_analysis'), relevant_context))
+            # result = checker_agent(message, loop_result.get('data_list'), loop_result.get('initial_analysis'), relevant_context)
+            try:
+                await task_main
+            except asyncio.CancelledError:
+                print('step 3 cancel')
+                llm_cancel_cleanup()
+                return jsonify({'success': 'aborted by user'})
+            
+            if result := task_main.result():
+                pass
+            else:
+                result = {}
         
-        # Create bot message object
-        # bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], response_type=result['response_type'])
-        bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], response_type=result['response_type'])
-        current_session.update_history(message, '\n'.join(preformat_list) + result['answer'])
+        if result.get('answer'):
+            # Create bot message object
+            bot_msg = session_mgr.create_message('bot', result['answer'], session_id, user_msg['id'], response_type=result['response_type'])
+            current_session.update_history(message, '\n'.join(preformat_list) + result['answer'])
 
-        # Update context and learning
-        context_mgr.update_history(session_id, message, '\n'.join(preformat_list) + result['answer'])
-        learn_from_conversation(session_mgr.get_session(session_id))
-    
-        # Store in knowledge base
-        _update_knowledge_base(kb, message, '\n'.join(preformat_list) + result['answer'], result['response_type'])
+            # Update context and learning
+            context_mgr.update_history(session_id, message, '\n'.join(preformat_list) + result['answer'])
+            learn_from_conversation(session_mgr.get_session(session_id))
+        
+            # Store in knowledge base
+            _update_knowledge_base(kb, message, '\n'.join(preformat_list) + result['answer'], result['response_type'])
         
         loop_result = {}
         preformat_list = []
+        task_main = None
         return jsonify(bot_msg)
         
     except Exception as e:
@@ -208,6 +219,25 @@ def _update_knowledge_base(kb, message: str, answer: str, response_type: str):
             kb.add_fact(f"Database {db} queried", category="databases", confidence=0.7)
     
     kb.add_example(message, answer, category=response_type)
+
+@app.route('/api/stop', methods=['POST'])
+async def cancel_request():
+    try:
+        if task_main is not None:
+            task_main.cancel()
+            for _ in range(20):
+                # if not task_main.done():
+                llm_cancel_cleanup()
+                #     print('still running lol')
+                #     continue
+                # else:
+                #     print('done cancelling!!')
+                #     pass
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': 'no task to cancel'})
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 @app.route('/api/external', methods=['POST'])
 def process_request():
